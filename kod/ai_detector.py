@@ -11,6 +11,10 @@ Główne ulepszenia:
 4. Specjalna obsługa detekcji Sora/Generacji AI
 5. Zaawansowana analiza forensic
 6. Wsparcie dla 3 trybów: AI Detection, Deepfake Detection, Watermark
+
+PATCH (2026-02):
+- Ensemble VideoMAE po config.HF_VIDEO_MODELS z cache per-model (cel: mniej false-positive).
+- W trybie `ai` (Sora/generacja) blokada werdyktu REAL, jeśli scena wskazuje mocno na AI.
 """
 
 from __future__ import annotations
@@ -798,21 +802,74 @@ def _compute_ai_scores(
 # HF Models Integration - ULEPSZONE
 # =============================================================================
 
-_videomae_detector = None
+# VideoMAE detektory cache'owane per model_id (ensemble)
+_videomae_detectors: Dict[str, VideoMAEDeepfakeDetector] = {}
 _videomae_lock = threading.Lock()
 
 _hf_image_pipelines = {}
 _hf_image_lock = threading.Lock()
 
 
-def _get_videomae_detector() -> VideoMAEDeepfakeDetector:
-    global _videomae_detector
+def _prefer_device() -> str:
+    return "cuda" if getattr(config, "PREFER_CUDA", True) and torch and torch.cuda.is_available() else "cpu"
+
+
+def _get_videomae_detector_for(model_id: str) -> VideoMAEDeepfakeDetector:
+    global _videomae_detectors
     with _videomae_lock:
-        if _videomae_detector is None:
-            model_id = getattr(config, "HF_VIDEO_MODEL", "shylhy/videomae-large-finetuned-deepfake-subset")
-            device = "cuda" if getattr(config, "PREFER_CUDA", True) and torch and torch.cuda.is_available() else "cpu"
-            _videomae_detector = VideoMAEDeepfakeDetector(VideoMAEConfig(model_id=model_id, device=device))
-        return _videomae_detector
+        det = _videomae_detectors.get(model_id)
+        if det is None:
+            det = VideoMAEDeepfakeDetector(VideoMAEConfig(model_id=model_id, device=_prefer_device()))
+            _videomae_detectors[model_id] = det
+        return det
+
+
+def _get_videomae_model_list() -> List[str]:
+    # Preferuj listę modeli; fallback do pojedynczego
+    models = getattr(config, "HF_VIDEO_MODELS", None)
+    if isinstance(models, list) and models:
+        out = [str(m) for m in models if str(m).strip()]
+        return out
+    single = getattr(config, "HF_VIDEO_MODEL", "Ammar2k/videomae-base-finetuned-deepfake-subset")
+    return [str(single)]
+
+
+def _videomae_ensemble_score(video_path: str, *, policy: str) -> Tuple[Optional[float], Dict[str, Any]]:
+    """Zwraca wynik w % (0..100) oraz szczegóły per-model.
+
+    High-precision: mediana (redukuje wpływ pojedynczych modeli, które "strzelą" false-positive).
+    High-recall: p90/max.
+    """
+    models = _get_videomae_model_list()
+
+    per_model: List[Dict[str, Any]] = []
+    scores: List[float] = []
+
+    for model_id in models:
+        try:
+            det = _get_videomae_detector_for(model_id)
+            p_fake, vm_details = det.analyze(video_path)
+            if p_fake is None:
+                per_model.append({"model": model_id, "status": "no_score", "details": vm_details})
+                continue
+            s = float(p_fake) * 100.0
+            scores.append(s)
+            per_model.append({"model": model_id, "status": "ok", "score": s, "details": vm_details})
+        except Exception as e:
+            per_model.append({"model": model_id, "status": "error", "error": str(e)})
+
+    if not scores:
+        return None, {"videomae_ensemble_status": "no_scores", "videomae_models": models, "videomae_per_model": per_model}
+
+    mode = "median" if policy == "high_precision" else "p90"
+    agg = robust_agg(scores, mode) if mode != "median" else robust_agg(scores, "median")
+
+    return agg, {
+        "videomae_ensemble_status": "ok",
+        "videomae_ensemble_mode": mode,
+        "videomae_models": models,
+        "videomae_per_model": per_model,
+    }
 
 
 def _get_hf_image_pipeline(model_id: str):
@@ -935,23 +992,24 @@ def scan_for_deepfake(
     if not os.path.exists(video_path):
         return "ERROR", 0.0, 0.0, {"error": f"Plik nie istnieje: {video_path}"}
 
+    policy = getattr(config, 'DECISION_POLICY', 'high_precision')
+
     # Inicjalizuj struktury do zbierania wyników
     details: Dict[str, Any] = {
         "detection_mode": detection_mode,
         "video_path": video_path
     }
 
-    # --- Analiza VideoMAE (jeśli dostępne) ---
+    # --- Analiza VideoMAE (ensemble) ---
     video_score: Optional[float] = None
     try:
-        vm_detector = _get_videomae_detector()
-        p_fake, vm_details = vm_detector.analyze(video_path)
-        if p_fake is not None:
-            video_score = p_fake * 100.0
-            details['videomae_details'] = vm_details
-            details['videomae_score_raw'] = p_fake * 100.0
+        ens_score, ens_details = _videomae_ensemble_score(video_path, policy=policy)
+        details['videomae_ensemble'] = ens_details
+        if ens_score is not None:
+            video_score = ens_score
+            details['videomae_score_raw'] = ens_score
     except Exception as e:
-        print(f"[VideoMAE] Error: {e}")
+        print(f"[VideoMAE Ensemble] Error: {e}")
         details['videomae_error'] = str(e)
 
     # --- Analiza klatek wideo ---
@@ -979,11 +1037,7 @@ def scan_for_deepfake(
             details['final_score'] = final_score
 
             # Werdykt
-            verdict = decision_policy(
-                final_score,
-                details,
-                policy=getattr(config, 'DECISION_POLICY', 'high_precision')
-            )
+            verdict = decision_policy(final_score, details, policy=policy)
             details['verdict'] = verdict
 
             return verdict, final_score, 0.0, details
@@ -1105,11 +1159,10 @@ def scan_for_deepfake(
         # Oblicz AI scores (Wersja FINAL v3 - Master)
         face_score_raw = robust_agg(face_scores_hf, "p90") if face_scores_hf else None
         scene_score_raw = robust_agg(scene_scores_hf, "p90") if scene_scores_hf else None
-        
+
         # Safety Gate & Noise Filter
         face_score = face_score_raw
         if face_score_raw is not None:
-            # Jeśli średnia jest niska, stłum wynik (filtr szumu/artefaktów)
             face_avg = float(np.mean(face_scores_hf))
             if face_avg < 25.0:
                 face_score = face_avg
@@ -1119,7 +1172,6 @@ def scan_for_deepfake(
         scene_score = scene_score_raw
         if scene_score_raw is not None:
             scene_avg = float(np.mean(scene_scores_hf))
-            # Scena jest bardzo podatna na szum tła
             if scene_avg < 35.0:
                 scene_score = scene_avg
             else:
@@ -1143,8 +1195,8 @@ def scan_for_deepfake(
         # Fuzja wyników wideo (VideoMAE + ewentualnie D3)
         video_fused = fuse_video_scores(
             details.get('ai_video_score'),
-            details.get('d3_score'),  # Jeśli masz D3
-            policy=getattr(config, 'DECISION_POLICY', 'high_precision')
+            details.get('d3_score'),
+            policy=policy
         )
         if video_fused is not None:
             details['ai_video_score'] = video_fused
@@ -1154,40 +1206,37 @@ def scan_for_deepfake(
 
         if detection_mode == "ai":
             # Tryb AI: bardziej ufaj wynikom sceny
-            if scene_score and scene_score > 70:
+            if scene_score is not None and scene_score > 70:
                 detection_flags.append("HIGH_AI_SCENE_SCORE")
-                # Podbij wynik jeśli scena wskazuje na AI
-                if face_score and face_score < 50:
+                # Podbij wynik, jeśli scena wskazuje na AI, ale nie przełamuj na siłę bez mocnych sygnałów
+                if face_score is not None and face_score < 50:
                     face_score = max(face_score, scene_score * 0.7)
 
         elif detection_mode == "deepfake":
-            # Tryb Deepfake: bardziej ufaj wynikom twarzy
-            if face_score and face_score > 70:
+            if face_score is not None and face_score > 70:
                 detection_flags.append("HIGH_DEEPFAKE_FACE_SCORE")
 
         else:  # combined
-            # Połączona logika
-            if scene_score and scene_score > 80:
+            if scene_score is not None and scene_score > 80:
                 detection_flags.append("HIGH_COMBINED_SCENE_SCORE")
-            if face_score and face_score > 80:
+            if face_score is not None and face_score > 80:
                 detection_flags.append("HIGH_COMBINED_FACE_SCORE")
 
-        # Dodatkowe flagi
         if details['face_ratio'] < 20:
             detection_flags.append("LOW_FACE_RATIO")
-        if jitter_px and jitter_px > 100:
+        if jitter_px is not None and jitter_px > 100:
             detection_flags.append("HIGH_JITTER")
 
         details['detection_flags'] = detection_flags
 
-        # Fuzja wszystkich wyników (Wersja FINAL v3 - Master)
+        # Fuzja wszystkich wyników
         features_for_fusion = {
             "face": face_score,
             "scene": scene_score,
             "video": details.get("ai_video_score"),
         }
         final_score = fuse_scores(features_for_fusion)
-        
+
         # Bonus za spójność (Multi-Signal Boost)
         candidates = [x for x in [face_score, scene_score, details.get("ai_video_score")] if x is not None]
         if candidates:
@@ -1197,26 +1246,30 @@ def scan_for_deepfake(
                 final_score = min(100.0, max(final_score, base_max) + 5.0)
             else:
                 final_score = max(final_score, base_max)
-        
+
         # Specjalna obsługa dla Sora/Generacji (brak twarzy + wysoki Scene/Video)
         if face_score is None or face_score < 20.0:
-            if (scene_score and scene_score > 70.0) or (details.get("ai_video_score") and details.get("ai_video_score") > 70.0):
+            if (scene_score is not None and scene_score > 70.0) or (details.get("ai_video_score") is not None and details.get("ai_video_score") > 70.0):
                 final_score = max(final_score, 75.0)
-                
+
+        # AI-mode gate: jeśli scena mocno krzyczy "AI", nie pozwól zjechać do REAL
+        # (ważne dla mniejszej liczby false-negative w AI-mode, ale bez generowania FP: podnosimy tylko do progu REAL_MAX+eps)
+        if detection_mode == "ai":
+            real_max = getattr(config, "REAL_MAX", 30.0)
+            eps = 0.01
+            if scene_score is not None and scene_score >= 85.0:
+                if final_score <= real_max:
+                    detection_flags.append("AI_MODE_NO_REAL_GATE")
+                    final_score = real_max + eps
+
         details['final_score'] = final_score
 
-        # Werdykt
-        verdict = decision_policy(
-            final_score,
-            details,
-            policy=getattr(config, 'DECISION_POLICY', 'high_precision')
-        )
+        verdict = decision_policy(final_score, details, policy=policy)
         details['verdict'] = verdict
 
         # Oblicz fake_ratio (proporcja klatek z twarzą, które mają wysoki wynik)
         fake_ratio = 0.0
         if face_scores_hf:
-            # Uznajemy, że wynik > 50% to podejrzenie fake
             fake_frames = sum(1 for s in face_scores_hf if s > 50)
             fake_ratio = (fake_frames / len(face_scores_hf)) * 100.0
 
@@ -1265,7 +1318,6 @@ def analyze_video(
         detection_mode = "deepfake"
 
     try:
-        # Uruchom główną analizę
         verdict, final_score, fake_ratio, details = scan_for_deepfake(
             video_path,
             max_frames=max_frames,
@@ -1274,7 +1326,6 @@ def analyze_video(
             detection_mode=detection_mode,
         )
 
-        # Przygotuj wyniki w formacie raportu
         ai_res = AiResult(
             face_score=details.get('ai_face_score'),
             scene_score=details.get('ai_scene_score'),
@@ -1307,7 +1358,6 @@ def analyze_video(
             }
         )
 
-        # Zapisz raport
         txt_path = os.path.join(run_dir, os.path.splitext(base)[0] + ".txt")
         _write_report_txt(report, txt_path)
 
@@ -1445,12 +1495,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     do_watermark = bool(args.watermark)
 
     try:
-        # Użyj trybu detekcji z argumentów
         files = _collect_video_files(args.path)
-
-        # Przekaż tryb detekcji do analizy plików
-        # (niestety analyze_files nie obsługuje bezpośrednio detection_mode,
-        # więc możemy potrzebować modyfikacji)
 
         results = analyze_files(
             files,
@@ -1465,7 +1510,6 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         print(f"> Analiza zakończona. Przeanalizowano {len(results)} plików.")
 
-        # Podsumowanie
         real_count = sum(1 for r in results if "REAL" in r.verdict)
         fake_count = sum(1 for r in results if "FAKE" in r.verdict)
         grey_count = sum(1 for r in results if "NIEPEWNE" in r.verdict or "GREY" in r.verdict)
