@@ -111,53 +111,46 @@ class AnalysisWorker(QtCore.QThread):
                 self.progress.emit(int(curr), int(tot))
 
             try:
-                res = ai_detector.scan_for_deepfake(
+                # GUI powinno wołać analyze_video(), bo to zapisuje raport i zwraca ścieżkę
+                report, rep_path = ai_detector.analyze_video(
                     path,
-                    progress_callback=cb,
-                    check_stop=lambda: self._stop,
-                    do_face_ai=self._do_face_ai,
+                    self._run_dir,
+                    max_frames=int(getattr(config, "MAX_FRAMES", 60) or 60),
+                    do_ai=self._do_face_ai,
                     do_forensic=self._do_forensic,
-                    run_dir=self._run_dir,
+                    do_watermark=self._do_watermark,
+                    progress_callback=cb,
+                    json_report=bool(getattr(config, "JSON_REPORT", False)),
+                    check_stop=lambda: self._stop,
                 )
 
-                if isinstance(res, tuple) and len(res) == 2:
-                    # Case: (AiResult, ForensicResult)
-                    ai_res, for_res = res
-                    status = "DONE"
-                    score = float(getattr(ai_res, "combined_max", 0.0) or 0.0)
-                    fake_ratio = 0.0
-                    details = {
-                        "ai_face_score": getattr(ai_res, "face_score", None),
-                        "ai_scene_score": getattr(ai_res, "scene_score", None),
-                        "ai_video_score": getattr(ai_res, "video_score", None),
-                        "ai_combined_score": getattr(ai_res, "combined_max", None),
+                if report is None:
+                    raise RuntimeError("analyze_video() returned None")
 
-                        "jitter_px": getattr(for_res, "jitter_px", None),
-                        "blink_per_min": getattr(for_res, "blink_per_min", None),
-                        "ela_score": getattr(for_res, "ela_score", None),
-                        "fft_score": getattr(for_res, "fft_score", None),
-                        "border_artifacts": getattr(for_res, "border_artifacts", None),
-                        "face_sharpness": getattr(for_res, "face_sharpness", None),
-                    }
-                elif isinstance(res, tuple) and len(res) == 4:
-                    status, score, fake_ratio, details = res
-                else:
-                    raise ValueError(f"Unexpected return type from scan_for_deepfake: {type(res)}")
+                details = {
+                    "status": "DONE",
+                    "verdict": report.verdict,
+                    "final_score": report.total_score,
+                    "ai_face_score": report.ai.face_score,
+                    "ai_scene_score": report.ai.scene_score,
+                    "ai_video_score": report.ai.video_score,
+                    "full_path": os.path.abspath(path),
+                    "folder_path": self._run_dir,
+                    "report_txt_path": rep_path,
+                }
 
-                details = (details or {})
-                details["status"] = status
-                details.setdefault("raw_final_score", details.get("final_score", score))
-                details.setdefault("fake_ratio", fake_ratio)
-                details.setdefault("full_path", os.path.abspath(path))
             except Exception as e:
                 self.log_line.emit(f"[BŁĄD] {os.path.basename(path)} (AI): {e}")
                 details = {
                     "status": "ERROR",
                     "verdict": "ERROR",
                     "final_score": 0.0,
-                    "full_path": os.path.abspath(path)
+                    "full_path": os.path.abspath(path),
+                    "folder_path": self._run_dir,
                 }
 
+            # watermark jest już robiony w ai_detector.analyze_video() jeśli do_watermark=True,
+            # ale jeśli zostaje osobno (ocr_detector), to dokładamy dane bez nadpisywania folder_path
             if not self._stop and self._do_watermark:
                 wm = self._run_watermark(path)
                 if isinstance(wm, dict):
@@ -367,6 +360,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Zamiast max(): ważona średnia z config.FUSE_WEIGHTS + suppress sceny.
         To stabilizuje wynik i zmniejsza saturację 100%.
+
+        Patch: domyślnie tłumimy scenę, jeśli nie jest to tryb "ai".
         """
         w = getattr(config, "FUSE_WEIGHTS", {"video": 0.5, "face": 0.35, "scene": 0.15})
         face_w = float(w.get("face", 0.35))
@@ -710,7 +705,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         idx = items[0].row()
 
+        # Preferuj konkretny plik raportu, jeśli jest
+        txt_path = None
+        summary = self.per_file_summaries.get(idx)
         report_dir = self.report_paths.get(idx)
+
+        # Jeżeli mamy report_dir, otwieramy folder
         fallback_dir = os.path.dirname(os.path.abspath(self.files[idx])) if 0 <= idx < len(self.files) else None
 
         path_to_open = None
