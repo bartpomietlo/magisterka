@@ -149,13 +149,15 @@ class AnalysisWorker(QtCore.QThread):
                 details.setdefault("raw_final_score", details.get("final_score", score))
                 details.setdefault("fake_ratio", fake_ratio)
                 details.setdefault("full_path", os.path.abspath(path))
+                details.setdefault("folder_path", self._run_dir)
             except Exception as e:
                 self.log_line.emit(f"[BŁĄD] {os.path.basename(path)} (AI): {e}")
                 details = {
                     "status": "ERROR",
                     "verdict": "ERROR",
                     "final_score": 0.0,
-                    "full_path": os.path.abspath(path)
+                    "full_path": os.path.abspath(path),
+                    "folder_path": self._run_dir,
                 }
 
             if not self._stop and self._do_watermark:
@@ -187,6 +189,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.report_paths: Dict[int, str] = {}
         self.per_file_summaries: Dict[int, str] = {}
         self.current_run_dir: Optional[str] = None
+
+        # metryki runu (prosta ewaluacja po nazwie pliku)
+        self.run_eval: List[Dict[str, Any]] = []
 
         # kalibracja progów (ładowana z pliku per-run)
         self.thresholds = None
@@ -628,6 +633,72 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return "\n".join(lines)
 
+    # -------------------- Run metrics --------------------
+
+    @staticmethod
+    def _gt_from_filename(filename: str) -> Optional[str]:
+        fn = filename.lower()
+        if "_fake" in fn:
+            return "FAKE"
+        if "_real" in fn:
+            return "REAL"
+        return None
+
+    @staticmethod
+    def _pred_bucket(verdict: str) -> str:
+        v = (verdict or "").upper()
+        if "FAKE" in v:
+            return "FAKE"
+        if "REAL" in v:
+            return "REAL"
+        return "GREY"
+
+    def _append_run_eval(self, full_path: str, verdict: str, final_score: Optional[float]):
+        fname = os.path.basename(full_path or "")
+        gt = self._gt_from_filename(fname)
+        pred = self._pred_bucket(verdict)
+        self.run_eval.append({
+            "file": fname,
+            "gt": gt,
+            "pred": pred,
+            "verdict": verdict,
+            "score": final_score,
+        })
+
+    def _emit_run_summary(self):
+        known = [r for r in self.run_eval if r.get("gt") in ("FAKE", "REAL")]
+        if not known:
+            self.append_log("> [METRICS] Brak etykiet GT (w nazwach plików brak _fake/_real) – pomijam podsumowanie.")
+            return
+
+        covered = [r for r in known if r.get("pred") in ("FAKE", "REAL")]
+        strict_correct = sum(1 for r in known if r.get("pred") == r.get("gt"))
+        covered_correct = sum(1 for r in covered if r.get("pred") == r.get("gt"))
+
+        # confusions tylko dla covered
+        fp = sum(1 for r in covered if r.get("gt") == "REAL" and r.get("pred") == "FAKE")
+        fn = sum(1 for r in covered if r.get("gt") == "FAKE" and r.get("pred") == "REAL")
+        tp = sum(1 for r in covered if r.get("gt") == "FAKE" and r.get("pred") == "FAKE")
+        tn = sum(1 for r in covered if r.get("gt") == "REAL" and r.get("pred") == "REAL")
+
+        n = len(known)
+        n_cov = len(covered)
+        n_grey = sum(1 for r in known if r.get("pred") == "GREY")
+
+        def pct(x, den):
+            return 0.0 if den <= 0 else (100.0 * float(x) / float(den))
+
+        fake_min = float(getattr(config, "FAKE_MIN", 60.0))
+        real_max = float(getattr(config, "REAL_MAX", 30.0))
+
+        self.append_log("> [METRICS] Podsumowanie runu (GT z nazw: _fake/_real)")
+        self.append_log(f"> [METRICS] Progi: REAL_MAX={real_max:.1f}%, FAKE_MIN={fake_min:.1f}%")
+        self.append_log(f"> [METRICS] Pliki: {n} (covered={n_cov}, grey={n_grey})")
+        self.append_log(f"> [METRICS] Coverage: {pct(n_cov, n):.2f}% ({n_cov}/{n})")
+        self.append_log(f"> [METRICS] Accuracy (covered): {pct(covered_correct, n_cov):.2f}% ({covered_correct}/{n_cov})")
+        self.append_log(f"> [METRICS] Accuracy (strict; GREY=wrong): {pct(strict_correct, n):.2f}% ({strict_correct}/{n})")
+        self.append_log(f"> [METRICS] Confusion (covered): TP={tp}, TN={tn}, FP={fp}, FN={fn}")
+
     # -------------------- Actions --------------------
 
     def pick_files(self):
@@ -664,6 +735,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.files:
             QtWidgets.QMessageBox.warning(self, "Brak plików", "Najpierw dodaj pliki lub folder do analizy.")
             return
+
+        # reset run metrics
+        self.run_eval = []
 
         do_ai = self.chk_ai.isChecked()
         do_forensic = self.chk_forensic.isChecked()
@@ -795,18 +869,41 @@ class MainWindow(QtWidgets.QMainWindow):
         verdict = d.get("verdict", "UNKNOWN")
         score = d.get("final_score")
 
+        # do metryk runu
+        self._append_run_eval(d.get("full_path") or "", verdict, score)
+
+        fake_min = float(getattr(config, "FAKE_MIN", 60.0))
+        real_max = float(getattr(config, "REAL_MAX", 30.0))
+
         if d.get("no_signal"):
             self.append_log(f"< [{idx + 1}/{len(self.files)}] BRAK DANYCH z modeli. Raport: {folder}")
         else:
             try:
-                score_str = f"{float(score):.2f}%" if score is not None else "N/A"
+                score_val = float(score) if score is not None else None
+                score_str = f"{score_val:.2f}%" if score_val is not None else "N/A"
             except Exception:
+                score_val = None
                 score_str = "N/A"
-            self.append_log(f"< [{idx + 1}/{len(self.files)}] DONE: {verdict} ({score_str}). Raport: {folder}")
+
+            extra = ""
+            if score_val is not None:
+                if score_val >= fake_min:
+                    extra = f" [>=FAKE_MIN {fake_min:.0f}]"
+                elif score_val <= real_max:
+                    extra = f" [<=REAL_MAX {real_max:.0f}]"
+                else:
+                    d_fake = fake_min - score_val
+                    d_real = score_val - real_max
+                    extra = f" [GREY: +{d_fake:.2f} do FAKE, +{d_real:.2f} ponad REAL]"
+
+            self.append_log(
+                f"< [{idx + 1}/{len(self.files)}] DONE: {verdict} ({score_str}){extra}. Raport: {folder}"
+            )
 
     @QtCore.pyqtSlot()
     def on_all_done(self):
         self.append_log("> Analiza zakończona.")
+        self._emit_run_summary()
         self.btn_pick_files.setEnabled(True)
         self.btn_pick_folder.setEnabled(True)
         self.btn_start.setEnabled(len(self.files) > 0)
