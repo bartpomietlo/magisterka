@@ -6,6 +6,7 @@ Dostosowane do wytycznych:
 - Zapis CSV z detekcjami (Plik, Typ, Numer klatki, Timestamp, Typ watermarku, Confidence, Tekst, Ścieżka).
 - Konfiguracja progu pewności (confidence) oraz próbkowania (sample_rate).
 - Przekazywanie na żywo wszystkich skanowanych klatek do podglądu w GUI.
+- PEŁNE skanowanie klatki (usunięto ograniczające 'smart corners'), aby łapać znaki wodne w centrum.
 """
 
 from __future__ import annotations
@@ -208,64 +209,51 @@ def scan_for_watermarks(
                     "source": "YOLO"
                 })
 
-            # 2) OCR
+            # 2) OCR - CAŁY EKRAN (usunięto ograniczające 'smart corners')
             reader = _get_reader()
             if reader is not None:
-                # Rozszerzamy obszar sprawdzania. 
-                # Zamiast samych małych narożników bierzemy szersze paski (0.45) 
-                # z uwagi na to, że niektóre loga sora / runway są bliżej środka krawędzi
-                w_margin = int(w * 0.45)
-                h_margin = int(h * 0.35)
-                
-                smart_corners = [
-                    (frame[0:h_margin, 0:w_margin], 0, 0),
-                    (frame[0:h_margin, w - w_margin:w], w - w_margin, 0),
-                    (frame[h - h_margin:h, 0:w_margin], 0, h - h_margin),
-                    (frame[h - h_margin:h, w - w_margin:w], w - w_margin, h - h_margin),
-                ]
+                # Skanujemy cały obraz poddany preprocessingowi
+                enhanced_roi = _preprocess_for_ocr(frame)
 
-                for roi, x_off, y_off in smart_corners:
-                    if roi.size == 0: continue
-                    enhanced_roi = _preprocess_for_ocr(roi)
-
-                    try:
-                        if _OCR_ENGINE_TYPE == "paddle":
-                            results = reader.ocr(enhanced_roi, cls=False)
-                            parsed_results = []
-                            if results and results[0] is not None:
-                                for line in results[0]:
-                                    parsed_results.append((line[0], line[1][0], line[1][1]))
-                        else:
-                            parsed_results = reader.readtext(enhanced_roi)
-                    except Exception:
+                try:
+                    if _OCR_ENGINE_TYPE == "paddle":
+                        results = reader.ocr(enhanced_roi, cls=False)
                         parsed_results = []
+                        if results and results[0] is not None:
+                            for line in results[0]:
+                                parsed_results.append((line[0], line[1][0], line[1][1]))
+                    else:
+                        parsed_results = reader.readtext(enhanced_roi)
+                except Exception:
+                    parsed_results = []
 
-                    for (bbox, text, prob) in parsed_results:
-                        if float(prob) < confidence:
-                            continue
-                        
-                        t = str(text).upper()
-                        t_clean = t.replace(" ", "")
-                        
-                        matched_keyword = "UNKNOWN"
-                        for k in keywords:
-                            if k.replace(" ", "") in t_clean:
-                                matched_keyword = k
-                                break
-                                
-                        if matched_keyword != "UNKNOWN":
-                            x1 = int(bbox[0][0]) + x_off
-                            y1 = int(bbox[0][1]) + y_off
-                            x2 = int(bbox[2][0]) + x_off
-                            y2 = int(bbox[2][1]) + y_off
+                for (bbox, text, prob) in parsed_results:
+                    if float(prob) < confidence:
+                        continue
+                    
+                    t = str(text).upper()
+                    t_clean = t.replace(" ", "")
+                    
+                    matched_keyword = "UNKNOWN"
+                    for k in keywords:
+                        if k.replace(" ", "") in t_clean:
+                            matched_keyword = k
+                            break
                             
-                            frame_detections.append({
-                                "type": matched_keyword,
-                                "confidence": float(prob),
-                                "text": t,
-                                "bbox": (x1, y1, x2, y2),
-                                "source": "OCR"
-                            })
+                    if matched_keyword != "UNKNOWN":
+                        # Brak offsetów (x_off, y_off = 0), bo skanujemy całość
+                        x1 = int(bbox[0][0])
+                        y1 = int(bbox[0][1])
+                        x2 = int(bbox[2][0])
+                        y2 = int(bbox[2][1])
+                        
+                        frame_detections.append({
+                            "type": matched_keyword,
+                            "confidence": float(prob),
+                            "text": t,
+                            "bbox": (x1, y1, x2, y2),
+                            "source": "OCR"
+                        })
 
             # Rysowanie i logowanie
             for det in frame_detections:
@@ -305,7 +293,6 @@ def scan_for_watermarks(
 
             # Wyślij KAŻDĄ analizowaną klatkę do podglądu (nawet bez watermarku) by był efekt wideo na żywo
             if preview_callback:
-                # Opcjonalnie można dodać tekst w rogu, że nic nie wykryto na tej klatce, by interfejs żył
                 if not frame_detections:
                      cv2.putText(frame_to_draw, f"Brak detekcji (klatka {frame_idx})", (10, 30), 
                                  cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
