@@ -6,7 +6,8 @@ Dostosowane do wytycznych:
 - Zapis CSV z detekcjami (Plik, Typ, Numer klatki, Timestamp, Typ watermarku, Confidence, Tekst, Ścieżka).
 - Konfiguracja progu pewności (confidence) oraz próbkowania (sample_rate).
 - Przekazywanie na żywo wszystkich skanowanych klatek do podglądu w GUI.
-- Skanowanie obu wersji klatki (surowa + CLAHE), aby radzić sobie z różnym natężeniem kontrastu.
+- Skanowanie trzech wersji klatki (surowa, CLAHE, odwrócone kolory), by łapać biały tekst na jasnym tle.
+- Ujednolicony, profesjonalny kolor obramowań detekcji (jasna zieleń).
 """
 
 from __future__ import annotations
@@ -211,15 +212,18 @@ def scan_for_watermarks(
             # 2) OCR
             reader = _get_reader()
             if reader is not None:
-                # Skanujemy dwie wersje klatki: 
-                # a) oryginalną (dla jasnych, wysokokontrastowych napisów)
-                # b) po CLAHE (dla zblendowanych, słabo widocznych znaków wodnych)
+                # Skanujemy TRZY wersje klatki: 
+                # a) oryginalną (dla standardowych napisów)
+                # b) po CLAHE (dla zblendowanych, słabo widocznych znaków)
+                # c) Odwrócone kolory (dla BIAŁYCH napisów na JASNYM tle, jak chmury czy niebo)
                 
                 enhanced_roi = _preprocess_for_ocr(frame)
+                inverted_roi = cv2.bitwise_not(frame)
                 
                 versions_to_scan = [
                     ("OCR-RAW", frame),
-                    ("OCR-CLAHE", enhanced_roi)
+                    ("OCR-CLAHE", enhanced_roi),
+                    ("OCR-INV", inverted_roi)
                 ]
 
                 # Zbieramy wyniki, unikając duplikatów dla tego samego słowa
@@ -269,12 +273,9 @@ def scan_for_watermarks(
             # Rysowanie i logowanie
             for det in frame_detections:
                 x1, y1, x2, y2 = det["bbox"]
-                if det["source"] == "YOLO":
-                    color = (0, 255, 0)
-                elif det["source"] == "OCR-RAW":
-                    color = (0, 165, 255) # Pomarańczowy dla czystego OCR
-                else:
-                    color = (0, 100, 255) # Ciemniejszy pomarańczowy dla CLAHE
+                
+                # Ujednolicony kolor dla wszystkich metod detekcji (Jasna, profesjonalna zieleń Matrix)
+                color = (0, 255, 0)
                     
                 cv2.rectangle(frame_to_draw, (x1, y1), (x2, y2), color, 3)
                 cv2.putText(
@@ -308,7 +309,7 @@ def scan_for_watermarks(
                 except Exception:
                     pass
 
-            # Wyślij KAŻDĄ analizowaną klatkę do podglądu (nawet bez watermarku) by był efekt wideo na żywo
+            # Wyślij KAŻDĄ analizowaną klatkę do podglądu
             if preview_callback:
                 if not frame_detections:
                      cv2.putText(frame_to_draw, f"Brak detekcji (klatka {frame_idx})", (10, 30), 
