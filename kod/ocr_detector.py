@@ -6,7 +6,7 @@ Dostosowane do wytycznych:
 - Zapis CSV z detekcjami (Plik, Typ, Numer klatki, Timestamp, Typ watermarku, Confidence, Tekst, Ścieżka).
 - Konfiguracja progu pewności (confidence) oraz próbkowania (sample_rate).
 - Przekazywanie na żywo wszystkich skanowanych klatek do podglądu w GUI.
-- PEŁNE skanowanie klatki (usunięto ograniczające 'smart corners'), aby łapać znaki wodne w centrum.
+- Skanowanie obu wersji klatki (surowa + CLAHE), aby radzić sobie z różnym natężeniem kontrastu.
 """
 
 from __future__ import annotations
@@ -193,7 +193,6 @@ def scan_for_watermarks(
                 continue
 
             now_sec = frame_idx / float(fps) if is_video else 0.0
-            h, w = frame.shape[:2]
             frame_to_draw = frame.copy()
             
             frame_detections = []
@@ -209,56 +208,74 @@ def scan_for_watermarks(
                     "source": "YOLO"
                 })
 
-            # 2) OCR - CAŁY EKRAN (usunięto ograniczające 'smart corners')
+            # 2) OCR
             reader = _get_reader()
             if reader is not None:
-                # Skanujemy cały obraz poddany preprocessingowi
+                # Skanujemy dwie wersje klatki: 
+                # a) oryginalną (dla jasnych, wysokokontrastowych napisów)
+                # b) po CLAHE (dla zblendowanych, słabo widocznych znaków wodnych)
+                
                 enhanced_roi = _preprocess_for_ocr(frame)
+                
+                versions_to_scan = [
+                    ("OCR-RAW", frame),
+                    ("OCR-CLAHE", enhanced_roi)
+                ]
 
-                try:
-                    if _OCR_ENGINE_TYPE == "paddle":
-                        results = reader.ocr(enhanced_roi, cls=False)
+                # Zbieramy wyniki, unikając duplikatów dla tego samego słowa
+                found_words_this_frame = set()
+
+                for source_name, image_to_scan in versions_to_scan:
+                    try:
+                        if _OCR_ENGINE_TYPE == "paddle":
+                            results = reader.ocr(image_to_scan, cls=False)
+                            parsed_results = []
+                            if results and results[0] is not None:
+                                for line in results[0]:
+                                    parsed_results.append((line[0], line[1][0], line[1][1]))
+                        else:
+                            parsed_results = reader.readtext(image_to_scan)
+                    except Exception:
                         parsed_results = []
-                        if results and results[0] is not None:
-                            for line in results[0]:
-                                parsed_results.append((line[0], line[1][0], line[1][1]))
-                    else:
-                        parsed_results = reader.readtext(enhanced_roi)
-                except Exception:
-                    parsed_results = []
 
-                for (bbox, text, prob) in parsed_results:
-                    if float(prob) < confidence:
-                        continue
-                    
-                    t = str(text).upper()
-                    t_clean = t.replace(" ", "")
-                    
-                    matched_keyword = "UNKNOWN"
-                    for k in keywords:
-                        if k.replace(" ", "") in t_clean:
-                            matched_keyword = k
-                            break
-                            
-                    if matched_keyword != "UNKNOWN":
-                        # Brak offsetów (x_off, y_off = 0), bo skanujemy całość
-                        x1 = int(bbox[0][0])
-                        y1 = int(bbox[0][1])
-                        x2 = int(bbox[2][0])
-                        y2 = int(bbox[2][1])
+                    for (bbox, text, prob) in parsed_results:
+                        if float(prob) < confidence:
+                            continue
                         
-                        frame_detections.append({
-                            "type": matched_keyword,
-                            "confidence": float(prob),
-                            "text": t,
-                            "bbox": (x1, y1, x2, y2),
-                            "source": "OCR"
-                        })
+                        t = str(text).upper()
+                        t_clean = t.replace(" ", "")
+                        
+                        matched_keyword = "UNKNOWN"
+                        for k in keywords:
+                            if k.replace(" ", "") in t_clean:
+                                matched_keyword = k
+                                break
+                                
+                        if matched_keyword != "UNKNOWN" and matched_keyword not in found_words_this_frame:
+                            x1 = int(bbox[0][0])
+                            y1 = int(bbox[0][1])
+                            x2 = int(bbox[2][0])
+                            y2 = int(bbox[2][1])
+                            
+                            frame_detections.append({
+                                "type": matched_keyword,
+                                "confidence": float(prob),
+                                "text": t,
+                                "bbox": (x1, y1, x2, y2),
+                                "source": source_name
+                            })
+                            found_words_this_frame.add(matched_keyword)
 
             # Rysowanie i logowanie
             for det in frame_detections:
                 x1, y1, x2, y2 = det["bbox"]
-                color = (0, 255, 0) if det["source"] == "YOLO" else (0, 165, 255)
+                if det["source"] == "YOLO":
+                    color = (0, 255, 0)
+                elif det["source"] == "OCR-RAW":
+                    color = (0, 165, 255) # Pomarańczowy dla czystego OCR
+                else:
+                    color = (0, 100, 255) # Ciemniejszy pomarańczowy dla CLAHE
+                    
                 cv2.rectangle(frame_to_draw, (x1, y1), (x2, y2), color, 3)
                 cv2.putText(
                     frame_to_draw,
