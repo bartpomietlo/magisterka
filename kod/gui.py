@@ -166,7 +166,7 @@ class WatermarkWorker(QtCore.QThread):
     file_started = pyqtSignal(int, str)
     file_finished = pyqtSignal(int, dict)
     log_line = pyqtSignal(str)
-    frame_detected = pyqtSignal(np.ndarray, list) # Modified to send frame AND detection boxes
+    frame_detected = pyqtSignal(np.ndarray, list)
     all_done = pyqtSignal()
 
     def __init__(
@@ -175,6 +175,7 @@ class WatermarkWorker(QtCore.QThread):
         confidence: float,
         sample_rate: int,
         output_dir: str,
+        detailed_scan: bool,
         parent=None,
     ):
         super().__init__(parent)
@@ -182,6 +183,7 @@ class WatermarkWorker(QtCore.QThread):
         self._confidence = confidence
         self._sample_rate = sample_rate
         self._output_dir = output_dir
+        self._detailed_scan = detailed_scan
         self._stop = False
 
     def stop(self) -> None:
@@ -193,7 +195,6 @@ class WatermarkWorker(QtCore.QThread):
             self.all_done.emit()
             return
 
-        # Tymczasowo nadpisujemy globalny katalog z configa jeśli wybrano własny
         original_base = getattr(config, "REPORTS_BASE_DIR", "reports")
         if self._output_dir:
             setattr(config, "REPORTS_BASE_DIR", self._output_dir)
@@ -205,18 +206,16 @@ class WatermarkWorker(QtCore.QThread):
                 
                 fname = os.path.basename(path)
                 self.file_started.emit(idx, fname)
-                self.log_line.emit(f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} (Conf: {self._confidence}, Sample: {self._sample_rate})")
+                self.log_line.emit(f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} (Conf: {self._confidence}, Sample: {self._sample_rate}, Detailed: {self._detailed_scan})")
 
                 def cb(curr, tot):
                     self.progress.emit(int(curr), int(tot))
 
-                # We modify the callback wrapper slightly to accept detections list if provided by ocr_detector
-                # For backward compatibility with older ocr_detector.py, we handle both 1 and 2 arguments
                 def preview_cb(*args):
                     if len(args) == 1:
-                        self.frame_detected.emit(args[0], []) # no detections provided
+                        self.frame_detected.emit(args[0], [])
                     elif len(args) >= 2:
-                        self.frame_detected.emit(args[0], args[1]) # frame, detections
+                        self.frame_detected.emit(args[0], args[1])
 
                 try:
                     res = ocr_detector.scan_for_watermarks(
@@ -225,6 +224,7 @@ class WatermarkWorker(QtCore.QThread):
                         progress_callback=cb,
                         confidence=self._confidence,
                         sample_rate=self._sample_rate,
+                        detailed_scan=self._detailed_scan,
                         preview_callback=preview_cb
                     )
                     
@@ -237,7 +237,6 @@ class WatermarkWorker(QtCore.QThread):
 
                 self.file_finished.emit(idx, details)
         finally:
-             # Przywracamy oryginalny config dla porządku
              setattr(config, "REPORTS_BASE_DIR", original_base)
 
         self.all_done.emit()
@@ -268,7 +267,6 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0,0,0,0)
         
-        # 1. Pasek Narzędzi Głównego panelu
         top = QHBoxLayout()
         top.setSpacing(6)
         left_layout.addLayout(top)
@@ -298,7 +296,10 @@ class MainWindow(QMainWindow):
         param_lay.addRow("OCR Confidence:", self.spin_conf)
         param_lay.addRow("Sample rate:", self.spin_sample)
         
-        # Wybór folderu docelowego
+        self.chk_detailed = QCheckBox("Szczegółowa analiza (Dwufazowa)")
+        self.chk_detailed.setChecked(False)
+        param_lay.addRow("", self.chk_detailed)
+        
         dir_lay = QHBoxLayout()
         self.txt_output_dir = QLineEdit()
         self.txt_output_dir.setPlaceholderText("Domyślny folder z config.py")
@@ -330,7 +331,6 @@ class MainWindow(QMainWindow):
         self.btn_stop.clicked.connect(self.stop_analysis)
         top.addWidget(self.btn_stop)
 
-        # 2. Splitter: table + log
         splitter = QSplitter(Qt.Orientation.Vertical)
         left_layout.addWidget(splitter, 1)
 
@@ -351,7 +351,6 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.logView)
         splitter.setSizes([300, 300])
 
-        # 3. Bottom bar
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
         left_layout.addLayout(bottom)
@@ -372,7 +371,6 @@ class MainWindow(QMainWindow):
         # ---- RIGHT PANEL (Preview & Zoom) ----
         right_panel = QSplitter(Qt.Orientation.Vertical)
         
-        # 1. Main Full Frame Preview
         preview_container = QWidget()
         preview_lay = QVBoxLayout(preview_container)
         preview_lay.setContentsMargins(0,0,0,0)
@@ -389,7 +387,6 @@ class MainWindow(QMainWindow):
         preview_lay.addWidget(self.lbl_preview, 1)
         right_panel.addWidget(preview_container)
 
-        # 2. Zoomed Watermark Crop Preview
         zoom_container = QWidget()
         zoom_lay = QVBoxLayout(zoom_container)
         zoom_lay.setContentsMargins(0,10,0,0)
@@ -406,7 +403,7 @@ class MainWindow(QMainWindow):
         zoom_lay.addWidget(self.lbl_zoom, 1)
         right_panel.addWidget(zoom_container)
 
-        right_panel.setSizes([450, 150]) # Give more space to the main preview by default
+        right_panel.setSizes([450, 150]) 
         root.addWidget(right_panel, 1) 
 
         self.status = self.statusBar()
@@ -459,7 +456,6 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(np.ndarray, list)
     def set_preview_image(self, frame_bgr: np.ndarray, detections: list) -> None:
-        # Konwersja głównej klatki
         h, w, ch = frame_bgr.shape
         bytes_per_line = ch * w
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -473,20 +469,16 @@ class MainWindow(QMainWindow):
         )
         self.lbl_preview.setPixmap(scaled_pixmap)
 
-        # Obsługa panelu ZOOM (Przybliżenie)
         if detections and len(detections) > 0:
-            # Bierzemy pierwszą detekcję z brzegu do przybliżenia
             det = detections[0]
             x1, y1, x2, y2 = det.get("bbox", (0,0,10,10))
             
-            # Dodajemy trochę marginesu by napis nie "dusił się" w ramce
             padding = 30
             y1_p = max(0, y1 - padding)
             y2_p = min(h, y2 + padding)
             x1_p = max(0, x1 - padding)
             x2_p = min(w, x2 + padding)
             
-            # Wycinamy interesujący fragment (Crop)
             crop_bgr = frame_bgr[y1_p:y2_p, x1_p:x2_p]
             
             if crop_bgr.size > 0:
@@ -496,7 +488,6 @@ class MainWindow(QMainWindow):
                 crop_qt = QImage(crop_rgb.data, cw_c, ch_c, crop_bytes_per_line, QImage.Format.Format_RGB888)
                 crop_pix = QPixmap.fromImage(crop_qt)
                 
-                # Skalujemy "w górę" żeby łatwo było przeczytać co tam jest
                 scaled_crop = crop_pix.scaled(
                     self.lbl_zoom.size(),
                     Qt.AspectRatioMode.KeepAspectRatio,
@@ -555,8 +546,9 @@ class MainWindow(QMainWindow):
         conf_val     = self.spin_conf.value()
         sample_val   = self.spin_sample.value()
         out_dir      = self.txt_output_dir.text().strip()
+        detailed_val = self.chk_detailed.isChecked()
         
-        self.worker = WatermarkWorker(self.files, conf_val, sample_val, out_dir, parent=self)
+        self.worker = WatermarkWorker(self.files, conf_val, sample_val, out_dir, detailed_val, parent=self)
         self.worker.progress.connect(self.on_progress)
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_finished.connect(self.on_file_finished)
@@ -602,7 +594,7 @@ class MainWindow(QMainWindow):
         folder = details.get("watermark_folder")
         if folder:
             self.report_paths[idx] = folder
-            self.current_run_dir = os.path.dirname(folder) # Folder zbiorczy danej sesji
+            self.current_run_dir = os.path.dirname(folder)
             self.btn_open_folder.setEnabled(True)
             
         count = details.get("watermark_count")
@@ -620,7 +612,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def on_all_done(self) -> None:
         self.append_log("> Analiza wszystkich plików zakończona.")
-        self.progressBar.setValue(0)  # RESET PASKA POSTĘPU PO ZAKOŃCZENIU
+        self.progressBar.setValue(0)
         
         for btn in (self.btn_pick_files, self.btn_pick_folder):
             btn.setEnabled(True)
