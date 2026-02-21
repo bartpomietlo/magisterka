@@ -1,3 +1,4 @@
+"""
 # gui.py  (PyQt6 + Modern QSS) - STRICLY WATERMARK DETECTOR + PREVIEW
 import os
 import sys
@@ -87,7 +88,7 @@ QProgressBar::chunk {
 }
 QSplitter::handle { background-color: #45475a; }
 QStatusBar { background-color: #181825; color: #6c7086; border-top: 1px solid #45475a; }
-QLabel#preview_label {
+QLabel#preview_label, QLabel#zoom_label {
     background-color: #11111b; border: 1px solid #45475a; border-radius: 6px;
 }
 """
@@ -148,7 +149,7 @@ QProgressBar::chunk {
 }
 QSplitter::handle { background-color: #bcc0cc; }
 QStatusBar { background-color: #dce0e8; color: #9ca0b0; border-top: 1px solid #bcc0cc; }
-QLabel#preview_label {
+QLabel#preview_label, QLabel#zoom_label {
     background-color: #e6e9ef; border: 1px solid #bcc0cc; border-radius: 6px;
 }
 """
@@ -166,7 +167,7 @@ class WatermarkWorker(QtCore.QThread):
     file_started = pyqtSignal(int, str)
     file_finished = pyqtSignal(int, dict)
     log_line = pyqtSignal(str)
-    frame_detected = pyqtSignal(np.ndarray) # Signal to send BGR frame to GUI
+    frame_detected = pyqtSignal(np.ndarray, list) # Modified to send frame AND detection boxes
     all_done = pyqtSignal()
 
     def __init__(
@@ -210,8 +211,13 @@ class WatermarkWorker(QtCore.QThread):
                 def cb(curr, tot):
                     self.progress.emit(int(curr), int(tot))
 
-                def preview_cb(frame_bgr):
-                    self.frame_detected.emit(frame_bgr)
+                # We modify the callback wrapper slightly to accept detections list if provided by ocr_detector
+                # For backward compatibility with older ocr_detector.py, we handle both 1 and 2 arguments
+                def preview_cb(*args):
+                    if len(args) == 1:
+                        self.frame_detected.emit(args[0], []) # no detections provided
+                    elif len(args) >= 2:
+                        self.frame_detected.emit(args[0], args[1]) # frame, detections
 
                 try:
                     res = ocr_detector.scan_for_watermarks(
@@ -220,7 +226,7 @@ class WatermarkWorker(QtCore.QThread):
                         progress_callback=cb,
                         confidence=self._confidence,
                         sample_rate=self._sample_rate,
-                        preview_callback=preview_cb # Przekazanie callbacku do ocr_detector (wymaga modyfikacji ocr_detector)
+                        preview_callback=preview_cb
                     )
                     
                     details = res if isinstance(res, dict) else {}
@@ -244,7 +250,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Watermark Detector (PyQt6) z Podglądem")
-        self.resize(1200, 750)
+        self.resize(1300, 750)
 
         self.worker: Optional[WatermarkWorker] = None
         self.files: list[str] = []
@@ -254,7 +260,7 @@ class MainWindow(QMainWindow):
 
         central = QWidget(self)
         self.setCentralWidget(central)
-        root = QHBoxLayout(central) # Główne okno to teraz QHBoxLayout (Lewo GUI, Prawo Podgląd)
+        root = QHBoxLayout(central) 
         root.setSpacing(8)
         root.setContentsMargins(10, 10, 10, 10)
 
@@ -362,25 +368,47 @@ class MainWindow(QMainWindow):
         self.btn_open_folder.setEnabled(False)
         bottom.addWidget(self.btn_open_folder)
 
-        root.addWidget(left_panel, 2) # Lewy panel zajmuje 2/3 szerokości
+        root.addWidget(left_panel, 2) 
 
-        # ---- RIGHT PANEL (Preview) ----
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0,0,0,0)
+        # ---- RIGHT PANEL (Preview & Zoom) ----
+        right_panel = QSplitter(Qt.Orientation.Vertical)
         
-        lbl_title = QLabel("<b>Ostatnia wykryta klatka:</b>")
+        # 1. Main Full Frame Preview
+        preview_container = QWidget()
+        preview_lay = QVBoxLayout(preview_container)
+        preview_lay.setContentsMargins(0,0,0,0)
+        
+        lbl_title = QLabel("<b>Klatka z kamery:</b>")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_layout.addWidget(lbl_title)
+        preview_lay.addWidget(lbl_title)
         
         self.lbl_preview = QLabel("Brak podglądu")
         self.lbl_preview.setObjectName("preview_label")
         self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_preview.setMinimumSize(400, 300)
         self.lbl_preview.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-        right_layout.addWidget(self.lbl_preview, 1)
+        preview_lay.addWidget(self.lbl_preview, 1)
+        right_panel.addWidget(preview_container)
 
-        root.addWidget(right_panel, 1) # Prawy panel zajmuje 1/3 szerokości
+        # 2. Zoomed Watermark Crop Preview
+        zoom_container = QWidget()
+        zoom_lay = QVBoxLayout(zoom_container)
+        zoom_lay.setContentsMargins(0,10,0,0)
+        
+        lbl_zoom = QLabel("<b>Przybliżenie detekcji (Zoom):</b>")
+        lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        zoom_lay.addWidget(lbl_zoom)
+        
+        self.lbl_zoom = QLabel("Brak detekcji")
+        self.lbl_zoom.setObjectName("zoom_label")
+        self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_zoom.setMinimumSize(400, 150)
+        self.lbl_zoom.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        zoom_lay.addWidget(self.lbl_zoom, 1)
+        right_panel.addWidget(zoom_container)
+
+        right_panel.setSizes([450, 150]) # Give more space to the main preview by default
+        root.addWidget(right_panel, 1) 
 
         self.status = self.statusBar()
         self._apply_theme(True)
@@ -430,22 +458,54 @@ class MainWindow(QMainWindow):
             self.btn_start.setEnabled(True)
             self.append_log(f"> Dodano {added} plik(ów). Razem: {len(self.files)}.")
 
-    def set_preview_image(self, frame_bgr: np.ndarray) -> None:
-        # Konwersja OpenCV BGR do QPixmap
+    @pyqtSlot(np.ndarray, list)
+    def set_preview_image(self, frame_bgr: np.ndarray, detections: list) -> None:
+        # Konwersja głównej klatki
         h, w, ch = frame_bgr.shape
         bytes_per_line = ch * w
-        # Konwersja z BGR do RGB dla Qt
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         qt_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_img)
         
-        # Skalowanie z zachowaniem proporcji do wymiarów labelki
         scaled_pixmap = pixmap.scaled(
             self.lbl_preview.size(), 
             Qt.AspectRatioMode.KeepAspectRatio, 
             Qt.TransformationMode.SmoothTransformation
         )
         self.lbl_preview.setPixmap(scaled_pixmap)
+
+        # Obsługa panelu ZOOM (Przybliżenie)
+        if detections and len(detections) > 0:
+            # Bierzemy pierwszą detekcję z brzegu do przybliżenia
+            det = detections[0]
+            x1, y1, x2, y2 = det.get("bbox", (0,0,10,10))
+            
+            # Dodajemy trochę marginesu by napis nie "dusił się" w ramce
+            padding = 30
+            y1_p = max(0, y1 - padding)
+            y2_p = min(h, y2 + padding)
+            x1_p = max(0, x1 - padding)
+            x2_p = min(w, x2 + padding)
+            
+            # Wycinamy interesujący fragment (Crop)
+            crop_bgr = frame_bgr[y1_p:y2_p, x1_p:x2_p]
+            
+            if crop_bgr.size > 0:
+                ch_c, cw_c, c_c = crop_bgr.shape
+                crop_bytes_per_line = c_c * cw_c
+                crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+                crop_qt = QImage(crop_rgb.data, cw_c, ch_c, crop_bytes_per_line, QImage.Format.Format_RGB888)
+                crop_pix = QPixmap.fromImage(crop_qt)
+                
+                # Skalujemy "w górę" żeby łatwo było przeczytać co tam jest
+                scaled_crop = crop_pix.scaled(
+                    self.lbl_zoom.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self.lbl_zoom.setPixmap(scaled_crop)
+        else:
+            self.lbl_zoom.setText("Brak detekcji")
 
     # -------------------- Actions --------------------
     def pick_output_dir(self) -> None:
@@ -491,6 +551,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(True)
         self.progressBar.setValue(0)
         self.lbl_preview.setText("Analiza w toku...")
+        self.lbl_zoom.setText("Analiza w toku...")
         
         conf_val     = self.spin_conf.value()
         sample_val   = self.spin_sample.value()
@@ -580,3 +641,4 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+"""
