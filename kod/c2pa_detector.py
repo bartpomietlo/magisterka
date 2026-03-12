@@ -28,40 +28,36 @@ except ImportError:
 @dataclass
 class C2PAAssertion:
     """Pojedyncze twierdzenie (assertion) z manifestu C2PA."""
-    label: str          # np. "c2pa.actions", "c2pa.generator.info"
-    data: Any           # Dane twierdzenia (dict lub prymityw)
+    label: str
+    data: Any
 
 
 @dataclass
 class C2PAResult:
     """Wynik detekcji C2PA dla jednego pliku wideo."""
     video_path: str
-    found: bool                                  # Czy manifest C2PA istnieje
-    generator: Optional[str] = None             # Nazwa generatora (np. "Sora", "Runway")
-    generator_version: Optional[str] = None     # Wersja generatora
-    producer: Optional[str] = None              # Producent/firma
-    created_at: Optional[str] = None            # Data utworzenia wg C2PA
+    found: bool
+    generator: Optional[str] = None
+    generator_version: Optional[str] = None
+    producer: Optional[str] = None
+    created_at: Optional[str] = None
     assertions: List[C2PAAssertion] = field(default_factory=list)
-    raw_manifest: Optional[Dict] = None         # Surowy manifest JSON
-    error: Optional[str] = None                 # Błąd parsowania (jeśli był)
+    raw_manifest: Optional[Dict] = None
+    error: Optional[str] = None
 
     @property
     def is_ai_generated(self) -> bool:
-        """Zwraca True jeśli manifest wskazuje na generację AI."""
         if not self.found:
             return False
-        # Szukaj assertion c2pa.actions z akcją "c2pa.created"
         for assertion in self.assertions:
             if assertion.label == "c2pa.actions":
                 actions = assertion.data if isinstance(assertion.data, list) else []
                 for action in actions:
                     if isinstance(action, dict) and action.get("action") == "c2pa.created":
                         return True
-        # Alternatywnie: jeśli jest generator info, uznajemy za AI
         return self.generator is not None
 
     def summary(self) -> Dict[str, Any]:
-        """Zwraca czytelne podsumowanie wyniku."""
         return {
             "file": os.path.basename(self.video_path),
             "c2pa_found": self.found,
@@ -76,22 +72,13 @@ class C2PAResult:
 
 
 # =============================================================================
-# Główna klasa detektora
+# Glowna klasa detektora
 # =============================================================================
 
 class C2PADetector:
     """
     Detektor metadanych C2PA w plikach wideo.
-
-    C2PA (Coalition for Content Provenance and Authenticity) to otwarty standard
-    do oznaczania treści danymi o jej pochodzeniu. Pliki wideo wygenerowane przez
-    Sora, Runway, Adobe Firefly i inne narzędzia AI mogą zawierać manifest C2PA
-    osadzony w metadanych pliku MP4/MOV.
-
-    Użycie:
-        detector = C2PADetector()
-        result = detector.detect("video.mp4")
-        print(result.summary())
+    Uzywa c2pa.Reader (API >= 0.11) zamiast przestarzalego read_file.
     """
 
     KNOWN_AI_GENERATORS = {
@@ -107,104 +94,108 @@ class C2PADetector:
         "hailuo": "Hailuo AI",
     }
 
+    # Mapowanie rozszerzen na MIME types
+    MIME_TYPES = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/avi",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+    }
+
     def __init__(self):
         if not C2PA_AVAILABLE:
-            print("[C2PADetector] Biblioteka c2pa-python niedostępna — detekcja będzie zwracać found=False.")
+            print("[C2PADetector] Biblioteka c2pa-python niedostepna.")
+
+    def _get_mime(self, path: str) -> str:
+        ext = os.path.splitext(path)[1].lower()
+        return self.MIME_TYPES.get(ext, "video/mp4")
 
     def detect(self, video_path: str) -> C2PAResult:
         """
-        Odczytuje manifest C2PA z pliku wideo.
-
-        Args:
-            video_path: Ścieżka do pliku MP4/MOV.
-
-        Returns:
-            C2PAResult z informacjami o proweniencji.
+        Odczytuje manifest C2PA z pliku wideo uzywajac c2pa.Reader.
         """
         if not os.path.exists(video_path):
-            return C2PAResult(
-                video_path=video_path,
-                found=False,
-                error=f"Plik nie istnieje: {video_path}"
-            )
+            return C2PAResult(video_path=video_path, found=False,
+                              error=f"Plik nie istnieje: {video_path}")
 
         if not C2PA_AVAILABLE:
-            return C2PAResult(
-                video_path=video_path,
-                found=False,
-                error="Biblioteka c2pa-python nie jest zainstalowana"
-            )
+            return C2PAResult(video_path=video_path, found=False,
+                              error="Biblioteka c2pa-python nie jest zainstalowana")
 
         try:
-            # Odczytaj manifest C2PA z pliku
-            manifest_json = c2pa.read_file(video_path)
+            mime = self._get_mime(video_path)
+            with open(video_path, "rb") as f:
+                reader = c2pa.Reader(mime, f)
+                manifest_json = reader.json()
 
-            if manifest_json is None:
+            if not manifest_json:
                 return C2PAResult(video_path=video_path, found=False)
 
-            # Parsuj manifest
-            manifest = json.loads(manifest_json) if isinstance(manifest_json, str) else manifest_json
+            manifest = json.loads(manifest_json)
+
+            # Jesli nie ma zadnych manifestow = brak C2PA
+            if not manifest.get("manifests"):
+                return C2PAResult(video_path=video_path, found=False)
 
             return self._parse_manifest(video_path, manifest)
 
         except Exception as e:
             error_msg = str(e)
-            # C2PA nie znaleziono w pliku — to normalny przypadek dla filmów bez C2PA
-            if any(kw in error_msg.lower() for kw in ["not found", "no manifest", "jumbf", "missing"]):
+            # C2PA nie znaleziono - normalny przypadek
+            no_c2pa_keywords = ["not found", "no manifest", "jumbf", "missing",
+                                 "no active manifest", "c2pa not found", "no c2pa"]
+            if any(kw in error_msg.lower() for kw in no_c2pa_keywords):
                 return C2PAResult(video_path=video_path, found=False)
-            # Inny błąd
             return C2PAResult(video_path=video_path, found=False, error=error_msg)
 
     def _parse_manifest(self, video_path: str, manifest: Dict) -> C2PAResult:
-        """Parsuje surowy manifest C2PA do struktury C2PAResult."""
         assertions = []
         generator = None
         generator_version = None
         producer = None
         created_at = None
 
-        # Aktywny manifest (najnowszy)
         active_label = manifest.get("active_manifest")
         manifests = manifest.get("manifests", {})
         active = manifests.get(active_label, {}) if active_label else next(iter(manifests.values()), {})
 
-        # --- Assertions ---
         for assertion_data in active.get("assertions", []):
             label = assertion_data.get("label", "")
             data = assertion_data.get("data", {})
             assertions.append(C2PAAssertion(label=label, data=data))
 
-            # Wyciągnij generator info
             if label in ("c2pa.generator.info", "org.c2pa.generator"):
                 if isinstance(data, dict):
                     generator = data.get("name") or data.get("product")
                     generator_version = data.get("version")
 
-            # Data stworzenia z akcji
             if label == "c2pa.actions":
                 for action in (data if isinstance(data, list) else []):
                     if isinstance(action, dict) and action.get("when"):
                         created_at = action["when"]
                         break
 
-        # --- Claim ---
         claim = active.get("claim", {})
         if isinstance(claim, dict):
-            # Producent może być w claim lub w credentials
             producer = claim.get("dc:publisher") or claim.get("producer")
 
-        # --- Credentials / author ---
         for cred in active.get("credentials", []):
             if isinstance(cred, dict):
                 subj = cred.get("credentialSubject", {})
                 if isinstance(subj, dict):
                     producer = producer or subj.get("name") or subj.get("organization")
 
-        # --- Normalizacja generatora ---
+        # Sprawdz signature_info jako dodatkowe zrodlo producenta
+        sig_info = active.get("signature_info", {})
+        if isinstance(sig_info, dict):
+            producer = producer or sig_info.get("issuer")
+
         if generator:
-            normalized = self._normalize_generator(generator)
-            if normalized:
-                generator = normalized
+            generator = self._normalize_generator(generator)
 
         return C2PAResult(
             video_path=video_path,
@@ -217,24 +208,14 @@ class C2PADetector:
             raw_manifest=manifest,
         )
 
-    def _normalize_generator(self, raw: str) -> Optional[str]:
-        """Normalizuje nazwę generatora do czytelnej formy."""
+    def _normalize_generator(self, raw: str) -> str:
         lower = raw.lower()
         for key, name in self.KNOWN_AI_GENERATORS.items():
             if key in lower:
                 return name
-        return raw  # Zwróć oryginał jeśli nie pasuje do żadnego
+        return raw
 
     def detect_batch(self, video_paths: List[str]) -> List[C2PAResult]:
-        """
-        Analizuje listę plików wideo.
-
-        Args:
-            video_paths: Lista ścieżek do plików MP4/MOV.
-
-        Returns:
-            Lista wyników C2PAResult.
-        """
         results = []
         for i, path in enumerate(video_paths):
             print(f"[C2PADetector] {i + 1}/{len(video_paths)}: {os.path.basename(path)}")
@@ -247,23 +228,13 @@ class C2PADetector:
 # =============================================================================
 
 def detect_c2pa(video_path: str) -> C2PAResult:
-    """
-    Skrót do jednorazowej detekcji C2PA.
-
-    Args:
-        video_path: Ścieżka do pliku MP4.
-
-    Returns:
-        C2PAResult.
-    """
     return C2PADetector().detect(video_path)
 
 
 def print_c2pa_summary(result: C2PAResult):
-    """Wypisuje czytelne podsumowanie wyniku C2PA."""
     s = result.summary()
     print(f"\n=== C2PA: {s['file']} ===")
-    print(f"  Manifest C2PA:   {'TAK ✓' if s['c2pa_found'] else 'NIE ✗'}")
+    print(f"  Manifest C2PA:   {'TAK v' if s['c2pa_found'] else 'NIE x'}")
     print(f"  Generacja AI:    {'TAK' if s['is_ai_generated'] else 'NIE'}")
     print(f"  Generator:       {s['generator']}")
     print(f"  Wersja:          {s['generator_version']}")
@@ -271,7 +242,7 @@ def print_c2pa_summary(result: C2PAResult):
     print(f"  Data:            {s['created_at']}")
     print(f"  Assertions:      {s['assertions_count']}")
     if s['error'] != 'brak':
-        print(f"  Błąd:            {s['error']}")
+        print(f"  Blad:            {s['error']}")
 
 
 # =============================================================================
@@ -283,8 +254,7 @@ if __name__ == "__main__":
     import glob
 
     if len(sys.argv) < 2:
-        print("Użycie: python c2pa_detector.py <plik.mp4> [plik2.mp4 ...]")
-        print("Przykład: python c2pa_detector.py ../nagrania/*.mp4")
+        print("Uzycie: python c2pa_detector.py <plik.mp4> [plik2.mp4 ...]")
         sys.exit(1)
 
     paths = []
@@ -293,7 +263,7 @@ if __name__ == "__main__":
         paths.extend(expanded if expanded else [arg])
 
     if not paths:
-        print("Nie znaleziono plików.")
+        print("Nie znaleziono plikow.")
         sys.exit(1)
 
     detector = C2PADetector()
