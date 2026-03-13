@@ -7,7 +7,12 @@ Zaawansowane metody detekcji znakow wodnych:
 3. Noise Residual / FFT       – wykrywa periodyczne artefakty upsamplingu AI
 4. Zero-Variance ROI          – wykrywa regiony bez zmian w czasie (statyczny overlay)
 5. Optical Flow Overlay       – wykrywa statyczne piksele mimo globalnego ruchu kamery
-                                 przez analize konturow na mapie static_mask (Farneback)
+                                 (Farneback Dense OF + contour search, crop-attack resistant)
+
+Optymalizacje wydajnosci:
+- OF liczony na klatkach zmniejszonych do of_scale (domyslnie 0.5) -> 4x mniej obliczen
+- static_mask przeskalowana z powrotem do oryginalnych wymiarow przed nalozeiem konturow
+- Opcjonalne CUDA: cv2.cuda_FarnebackOpticalFlow jesli dostepne (karta NVIDIA)
 """
 
 from __future__ import annotations
@@ -17,6 +22,35 @@ from typing import List, Optional, Dict, Any
 
 import cv2
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Wykrywanie CUDA
+# ---------------------------------------------------------------------------
+
+def _cuda_available() -> bool:
+    """
+    Sprawdza czy OpenCV zostal skompilowany z CUDA i czy jest dostepna karta NVIDIA.
+    Uzywa cv2.cuda.getCudaEnabledDeviceCount() bez rzucania wyjatkow.
+    """
+    try:
+        return hasattr(cv2, 'cuda') and cv2.cuda.getCudaEnabledDeviceCount() > 0
+    except Exception:
+        return False
+
+
+_CUDA_AVAILABLE: Optional[bool] = None  # None = nie sprawdzono
+
+
+def _get_cuda() -> bool:
+    global _CUDA_AVAILABLE
+    if _CUDA_AVAILABLE is None:
+        _CUDA_AVAILABLE = _cuda_available()
+        if _CUDA_AVAILABLE:
+            print("[ADV] CUDA dostepna – OF bezie liczony na GPU.", file=sys.stderr)
+        else:
+            print("[ADV] CUDA niedostepna – OF na CPU (Farneback).", file=sys.stderr)
+    return _CUDA_AVAILABLE
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +113,7 @@ def detect_zero_variance_rois(
 
 
 # ---------------------------------------------------------------------------
-# 5. OPTICAL FLOW OVERLAY DETECTION (Farneback + contour search)
+# 5. OPTICAL FLOW OVERLAY DETECTION
 # ---------------------------------------------------------------------------
 
 def detect_optical_flow_overlay(
@@ -87,28 +121,38 @@ def detect_optical_flow_overlay(
     flow_zero_threshold: float = 0.5,
     min_global_motion: float = 0.8,
     min_contour_area: int = 40,
-    morph_kernel_size: int = 5
+    morph_kernel_size: int = 5,
+    of_scale: float = 0.5,
+    use_cuda: Optional[bool] = None
 ) -> List[Dict[str, Any]]:
     """
     Wykrywa statyczne piksele (nalozone overlaye) pomimo globalnego ruchu kamery.
 
+    Optymalizacje wydajnosci:
+    - of_scale (domyslnie 0.5): klatki zmniejszone do 50% przed OF -> 4x mniej obliczen
+      na CPU. Ruch skaluje sie liniowo (flow_zero_threshold korygowany automatycznie).
+      static_mask przeskalowywana z powrotem do oryginalnych wymiarow przed konturami.
+    - use_cuda=True: uzywa cv2.cuda_FarnebackOpticalFlow (GPU NVIDIA).
+      Jesli CUDA niedostepna lub use_cuda=False -> fallback do CPU Farneback.
+
     Algorytm:
-    1. Dense Optical Flow Farneback miedzy kolejnymi parami klatek.
-    2. Akumulacja sredniej mapy ruchu.
-    3. Jesli global_mean_motion < min_global_motion -> kamera stoi -> zwroc [] 
-       (klasyczne zero-variance wystarczy, OF nic nie wnosi).
-    4. Binaryzacja: piksele z ruchem < flow_zero_threshold = 'statyczne'.
-    5. Morfologiczne zamkniecie (CLOSE) laczace bliskie litery w jedna bryle.
-    6. cv2.findContours -> filtracja po polu powierzchni -> cv2.boundingRect.
-       BRAK sztywnego ograniczenia do naroznikow: wykrywa watermarki w centrum,
-       na dole kadru, oraz jest odporny na crop-attack (przycinanie krawedzi).
+    1. Downscale klatek do of_scale.
+    2. Dense Optical Flow (Farneback CPU lub CUDA GPU) miedzy parami klatek.
+    3. Akumulacja sredniej mapy ruchu.
+    4. Jesli global_mean_motion < min_global_motion -> kamera stoi -> zwroc [].
+    5. Binaryzacja: piksele z ruchem < flow_zero_threshold = statyczne.
+    6. Upscale static_mask do oryginalnych wymiarow.
+    7. Morfologiczne zamkniecie (CLOSE) + cv2.findContours na calym kadrze.
+    8. Filtracja po polu konturu, cv2.boundingRect, dynamiczne nazwy pozycji.
 
     Args:
         frames             : lista klatek BGR (min. 3)
-        flow_zero_threshold: prog wektora ruchu (px) – ponizej = statyczny
-        min_global_motion  : minimalny globalny ruch (px/klatke) by OF mial sens
+        flow_zero_threshold: prog wektora ruchu (px w skali oryginalnej)
+        min_global_motion  : minimalny globalny ruch (px) by OF mial sens
         min_contour_area   : minimalne pole konturu (eliminuje szum kompresji)
         morph_kernel_size  : rozmiar kernela morfologicznego zamkniecia
+        of_scale           : skalar zmniejszenia klatki przed OF (0.25-1.0)
+        use_cuda           : None=autodetect, True=wymusz GPU, False=wymusz CPU
 
     Returns:
         Lista {name, bbox, score, area, global_motion} lub []
@@ -116,50 +160,109 @@ def detect_optical_flow_overlay(
     if len(frames) < 3:
         return []
 
-    h, w = frames[0].shape[:2]
+    h_orig, w_orig = frames[0].shape[:2]
 
+    # Parametry Farneback dla CPU
     _FB_PARAMS = dict(
         pyr_scale=0.5, levels=3, winsize=15,
         iterations=3, poly_n=5, poly_sigma=1.2, flags=0
     )
 
-    # Akumuluj mape ruchu (probkuj max 10 par klatek)
-    step = max(1, len(frames) // 10)
-    sampled = frames[::step][:11]  # max 11 klatek -> 10 par
+    # Ustal czy uzyc CUDA
+    if use_cuda is None:
+        use_cuda = _get_cuda()
 
-    magnitude_acc = np.zeros((h, w), dtype=np.float32)
-    n_pairs = 0
-    prev_gray = cv2.cvtColor(sampled[0], cv2.COLOR_BGR2GRAY)
-    for curr_frame in sampled[1:]:
-        curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+    # Przygotuj obiekt CUDA OF jesli dostepny
+    cuda_of = None
+    if use_cuda:
         try:
-            flow = cv2.calcOpticalFlowFarneback(prev_gray, curr_gray, None, **_FB_PARAMS)
+            cuda_of = cv2.cuda_FarnebackOpticalFlow.create(
+                numLevels=3, pyrScale=0.5, fastPyramids=False,
+                winSize=15, numIters=3, polyN=5, polySigma=1.2, flags=0
+            )
+        except Exception as e:
+            print(f"[ADV] Blad tworzenia CUDA OF: {e} – fallback CPU", file=sys.stderr)
+            cuda_of = None
+            use_cuda = False
+
+    # Wymiary po downscale
+    of_scale = max(0.1, min(1.0, of_scale))  # guard: 0.1 - 1.0
+    h_of = max(1, int(h_orig * of_scale))
+    w_of = max(1, int(w_orig * of_scale))
+
+    # Koryguj prog ruchu proporcjonalnie do skali
+    threshold_scaled = flow_zero_threshold * of_scale
+    min_motion_scaled = min_global_motion * of_scale
+
+    # Probkuj max 10 par klatek
+    step = max(1, len(frames) // 10)
+    sampled = frames[::step][:11]
+
+    magnitude_acc = np.zeros((h_of, w_of), dtype=np.float32)
+    n_pairs = 0
+
+    def _resize_gray(frame: np.ndarray) -> np.ndarray:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if of_scale < 1.0:
+            gray = cv2.resize(gray, (w_of, h_of), interpolation=cv2.INTER_AREA)
+        return gray
+
+    prev_gray = _resize_gray(sampled[0])
+
+    for curr_frame in sampled[1:]:
+        curr_gray = _resize_gray(curr_frame)
+        try:
+            if cuda_of is not None:
+                # CUDA path
+                prev_gpu = cv2.cuda_GpuMat()
+                curr_gpu = cv2.cuda_GpuMat()
+                prev_gpu.upload(prev_gray)
+                curr_gpu.upload(curr_gray)
+                flow_gpu = cuda_of.calc(prev_gpu, curr_gpu, None)
+                flow = flow_gpu.download()
+            else:
+                # CPU path
+                flow = cv2.calcOpticalFlowFarneback(
+                    prev_gray, curr_gray, None, **_FB_PARAMS
+                )
             magnitude_acc += np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
             n_pairs += 1
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ADV] OF para klatek blad: {e}", file=sys.stderr)
         prev_gray = curr_gray
 
     if n_pairs == 0:
         return []
 
     avg_magnitude = magnitude_acc / n_pairs
-    global_mean_motion = float(np.mean(avg_magnitude))
+    global_mean_motion_scaled = float(np.mean(avg_magnitude))
 
-    if global_mean_motion < min_global_motion:
+    if global_mean_motion_scaled < min_motion_scaled:
         return []  # kamera stoi – zero-variance wystarczy
 
-    # Binaryzacja: piksele statyczne = 255
-    static_mask = np.where(avg_magnitude < flow_zero_threshold,
-                           np.uint8(255), np.uint8(0))
+    # Binaryzacja w skali OF
+    static_mask_small = np.where(
+        avg_magnitude < threshold_scaled, np.uint8(255), np.uint8(0)
+    )
 
-    # Morfologiczne zamkniecie – laczy bliskie litery napisu w jedna bryle
+    # Upscale maski do oryginalnych wymiarow
+    if of_scale < 1.0:
+        static_mask = cv2.resize(
+            static_mask_small, (w_orig, h_orig), interpolation=cv2.INTER_NEAREST
+        )
+    else:
+        static_mask = static_mask_small
+
+    # global_motion w oryginalnej skali pikselowej
+    global_mean_motion = global_mean_motion_scaled / of_scale
+
+    # Morfologiczne zamkniecie – laczy bliskie piksele liter w jedna bryle
     kernel = cv2.getStructuringElement(
         cv2.MORPH_RECT, (morph_kernel_size, morph_kernel_size)
     )
     closed_mask = cv2.morphologyEx(static_mask, cv2.MORPH_CLOSE, kernel)
 
-    # Znajdz kontury na calym kadrze (nie tylko w naroznikach!)
+    # Znajdz kontury na CALYM kadrze (nie tylko w naroznikach)
     contours, _ = cv2.findContours(
         closed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
@@ -168,36 +271,26 @@ def detect_optical_flow_overlay(
     for i, cnt in enumerate(contours):
         area = cv2.contourArea(cnt)
         if area < min_contour_area:
-            continue  # szum kompresji wideo
+            continue
 
         bx, by, bw_cnt, bh_cnt = cv2.boundingRect(cnt)
 
-        # Fraction statycznych pikseli wewnatrz bounding box
         roi_mask = static_mask[by:by + bh_cnt, bx:bx + bw_cnt]
         score = float(np.mean(roi_mask > 0)) if roi_mask.size > 0 else 0.0
 
-        # Nazwa na podstawie pozycji w kadrze
-        cx_rel = (bx + bw_cnt / 2) / w
-        cy_rel = (by + bh_cnt / 2) / h
-        pos_name = (
-            "OF-TOP" if cy_rel < 0.25 else
-            "OF-BOTTOM" if cy_rel > 0.75 else
-            "OF-CENTER"
-        )
-        if cx_rel < 0.25:
-            pos_name += "-L"
-        elif cx_rel > 0.75:
-            pos_name += "-R"
+        cx_rel = (bx + bw_cnt / 2) / w_orig
+        cy_rel = (by + bh_cnt / 2) / h_orig
+        pos_v = "TOP" if cy_rel < 0.25 else ("BOTTOM" if cy_rel > 0.75 else "CENTER")
+        pos_h = "-L" if cx_rel < 0.25 else ("-R" if cx_rel > 0.75 else "")
 
         results.append({
-            "name": f"{pos_name}-{i}",
+            "name": f"OF-{pos_v}{pos_h}-{i}",
             "bbox": (bx, by, bx + bw_cnt, by + bh_cnt),
             "score": score,
             "area": area,
             "global_motion": global_mean_motion
         })
 
-    # Sortuj malejaco wg pola – najwazniejsze kontury najpierw
     results.sort(key=lambda x: x["area"], reverse=True)
     return results
 
@@ -373,8 +466,16 @@ def run_advanced_scan(
     check_invisible: bool = True,
     check_fft: bool = True,
     check_optical_flow: bool = True,
+    of_scale: float = 0.5,
     log_fn=None
 ) -> Dict[str, Any]:
+    """
+    Zbiera klatki i uruchamia wszystkie zaawansowane metody detekcji.
+
+    Args:
+        of_scale: skalar zmniejszenia klatek przed OF (0.5 = 4x szybciej na CPU).
+                  Automatyczna korekcja progów wewnątrz detect_optical_flow_overlay.
+    """
     def _log(msg):
         print(msg, file=sys.stderr)
         if log_fn:
@@ -428,9 +529,10 @@ def run_advanced_scan(
         _log(f"[ADV] Blad zero-variance: {e}")
 
     if check_optical_flow and len(frames) >= 3:
-        _log("[ADV] Sprawdzam Optical Flow (Farneback + contour search)...")
+        cuda_str = "GPU" if _get_cuda() else "CPU"
+        _log(f"[ADV] Sprawdzam Optical Flow (Farneback {cuda_str}, scale={of_scale}) + contour search...")
         try:
-            of_rois = detect_optical_flow_overlay(frames)
+            of_rois = detect_optical_flow_overlay(frames, of_scale=of_scale)
             result["optical_flow_rois"] = of_rois
             if of_rois:
                 _log(f"[ADV] OF – znaleziono {len(of_rois)} konturow statycznych: "
