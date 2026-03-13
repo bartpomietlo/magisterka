@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import csv
 import math
+import sys
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Callable
@@ -26,10 +27,10 @@ import config
 
 _OCR_READER = None
 _OCR_ENGINE_TYPE = None
+_OCR_INIT_ERROR = None  # przechowuje ostatni blad inicjalizacji
 _YOLO_MODEL = None
 _OCR_LOCK = threading.Lock()
 
-# FIX: mniejszy ROI = bardziej skupiony na rogu, wiekszy scale = lepszy OCR malego tekstu
 CORNER_RATIO = 0.15
 CORNER_SCALE = 5.0
 
@@ -65,45 +66,84 @@ class TextTracker:
 def reset_reader():
     """
     Resetuje singleton OCR readera.
-    Wywolaj PRZED uruchomieniem skanu w nowym watku (np. QThread),
-    aby wymusic ponowna inicjalizacje modelu w kontekscie tego watku.
+    UWAGA: wywolanie tego w QThread a nastepnie _get_reader() w tym samym watku
+    moze spowodowac problemy z PyTorch DataLoader (pin_memory w watku bez event loop).
+    Uzyj warmup_reader() zamiast reset+get.
     """
-    global _OCR_READER, _OCR_ENGINE_TYPE
+    global _OCR_READER, _OCR_ENGINE_TYPE, _OCR_INIT_ERROR
     with _OCR_LOCK:
         _OCR_READER = None
         _OCR_ENGINE_TYPE = None
+        _OCR_INIT_ERROR = None
+
+
+def warmup_reader(log_fn=None):
+    """
+    Inicjalizuje OCR reader i zwraca (engine_name, error_or_None).
+    Bezpieczne do wywolania w QThread.
+    log_fn: opcjonalna funkcja(str) do logowania - np. self.log_line.emit
+    """
+    global _OCR_READER, _OCR_ENGINE_TYPE, _OCR_INIT_ERROR
+
+    def _log(msg):
+        print(msg, file=sys.stderr)
+        if log_fn:
+            try:
+                log_fn(msg)
+            except Exception:
+                pass
+
+    with _OCR_LOCK:
+        # Jesli juz zaladowany - OK
+        if _OCR_READER is not None:
+            _log(f"[OCR] Engine juz zaladowany: {_OCR_ENGINE_TYPE}")
+            return _OCR_ENGINE_TYPE, None
+
+        _OCR_INIT_ERROR = None
+
+        # Proba PaddleOCR
+        try:
+            from paddleocr import PaddleOCR  # type: ignore
+            _log("[OCR] Probuje PaddleOCR...")
+            _OCR_READER = PaddleOCR(use_angle_cls=False, lang='en', show_log=False)
+            _OCR_ENGINE_TYPE = "paddle"
+            _log("[OCR] PaddleOCR zaladowany pomyslnie.")
+            return "paddle", None
+        except ImportError:
+            _log("[OCR] PaddleOCR niedostepny (ImportError), probuje EasyOCR...")
+        except Exception as e:
+            _log(f"[OCR] PaddleOCR blad: {e}, probuje EasyOCR...")
+
+        # Proba EasyOCR
+        try:
+            import easyocr  # type: ignore
+            _log("[OCR] Inicjalizuje EasyOCR (moze chwile potrwac)...")
+            _OCR_READER = easyocr.Reader(["en", "pl"], gpu=False, verbose=False)
+            _OCR_ENGINE_TYPE = "easyocr"
+            _log("[OCR] EasyOCR zaladowany pomyslnie.")
+            return "easyocr", None
+        except Exception as e:
+            err = f"EasyOCR blad inicjalizacji: {e}"
+            _log(f"[OCR] BLAD KRYTYCZNY: {err}")
+            _OCR_READER = None
+            _OCR_ENGINE_TYPE = None
+            _OCR_INIT_ERROR = err
+            return None, err
 
 
 def _get_reader():
-    """Zwraca singleton OCR reader. Thread-safe, lazy-load."""
-    global _OCR_READER, _OCR_ENGINE_TYPE
+    """Zwraca singleton OCR reader. Jesli nie zaladowany - probuje zaladowac."""
+    global _OCR_READER
     if _OCR_READER is not None:
         return _OCR_READER
-
-    with _OCR_LOCK:
-        if _OCR_READER is not None:
-            return _OCR_READER
-
-        try:
-            from paddleocr import PaddleOCR  # type: ignore
-            _OCR_READER = PaddleOCR(use_angle_cls=False, lang='en', show_log=False)
-            _OCR_ENGINE_TYPE = "paddle"
-            return _OCR_READER
-        except ImportError:
-            pass
-        except Exception:
-            pass
-
-        try:
-            import easyocr  # type: ignore
-            _OCR_READER = easyocr.Reader(["en", "pl"], gpu=False, verbose=False)
-            _OCR_ENGINE_TYPE = "easyocr"
-            return _OCR_READER
-        except Exception as e:
-            _OCR_READER = None
-            _OCR_ENGINE_TYPE = None
-
+    # Leniwa inicjalizacja bez loggera (fallback)
+    warmup_reader()
     return _OCR_READER
+
+
+def get_init_error() -> Optional[str]:
+    """Zwraca ostatni blad inicjalizacji OCR lub None jesli OK."""
+    return _OCR_INIT_ERROR
 
 
 def _get_yolo():
@@ -254,56 +294,31 @@ def _extract_corner_rois(frame_bgr: np.ndarray) -> List[Tuple[str, np.ndarray, i
 
 
 def _corner_versions(roi_upscaled: np.ndarray) -> List[np.ndarray]:
-    """
-    FIX: rozszerzone wersje preprocessingu cornera.
-    Runway i podobne watermarki to maly, bialy, polprzezroczysty tekst -
-    wymagaja agresywniejszego przetwarzania niz pelna klatka.
-    """
-    versions = [roi_upscaled]  # RAW
+    versions = [roi_upscaled]
     try:
         gray = cv2.cvtColor(roi_upscaled, cv2.COLOR_BGR2GRAY)
-
-        # CLAHE na jasnosci
         versions.append(_preprocess_for_ocr(roi_upscaled))
-
-        # Odwrocone kolory (bialy tekst na ciemnym tle -> czarny na bialym)
         versions.append(cv2.bitwise_not(roi_upscaled))
-
-        # CLAHE + odwrocone (bialy tekst na jasnym tle)
         versions.append(cv2.bitwise_not(_preprocess_for_ocr(roi_upscaled)))
-
-        # Rozciagniecie histogramu (normalizacja kontrastu)
         norm = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
         versions.append(cv2.cvtColor(norm, cv2.COLOR_GRAY2BGR))
-
-        # Odwrocony znormalizowany
         versions.append(cv2.cvtColor(cv2.bitwise_not(norm), cv2.COLOR_GRAY2BGR))
-
-        # Blackhat - wydobywa ciemny tekst z jasnego tla
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
         blackhat = cv2.normalize(
             cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel), None, 0, 255, cv2.NORM_MINMAX
         )
         versions.append(cv2.cvtColor(blackhat, cv2.COLOR_GRAY2BGR))
-
-        # Tophat - wydobywa jasny tekst z ciemnego tla
         tophat = cv2.normalize(
             cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel), None, 0, 255, cv2.NORM_MINMAX
         )
         versions.append(cv2.cvtColor(tophat, cv2.COLOR_GRAY2BGR))
-
-        # Adaptive threshold
         adapt = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
         )
         versions.append(cv2.cvtColor(adapt, cv2.COLOR_GRAY2BGR))
         versions.append(cv2.cvtColor(cv2.bitwise_not(adapt), cv2.COLOR_GRAY2BGR))
-
-        # Wyostrzenie
         blur = cv2.GaussianBlur(roi_upscaled, (3, 3), 0)
-        sharp = cv2.addWeighted(roi_upscaled, 2.0, blur, -1.0, 0)
-        versions.append(sharp)
-
+        versions.append(cv2.addWeighted(roi_upscaled, 2.0, blur, -1.0, 0))
     except Exception:
         pass
     return versions
@@ -374,9 +389,7 @@ def _perform_scan(
                                       "bbox": (x1, y1, x2, y2), "source": source_name})
             found_keys.add(kw)
 
-    # FIX: corner ROI - izolowany found_keys + nizszy prog confidence + wiecej wersji preprocessingu
     h_orig, w_orig = frame_original.shape[:2]
-    # Nizszy prog dla cornerow: watermarki w rogach sa czesto polprzezroczyste
     corner_confidence = max(0.25, confidence - 0.25)
 
     for (corner_name, roi_upscaled, ox, oy) in _extract_corner_rois(frame_original):
@@ -411,6 +424,18 @@ def scan_for_watermarks(
 
     if not isinstance(sample_rate, int) or sample_rate <= 0:
         sample_rate = 1
+
+    # Sprawdz czy OCR jest dostepny
+    if _OCR_READER is None:
+        warmup_reader()
+    if _OCR_READER is None:
+        return {
+            "status": "ERROR",
+            "error": f"OCR reader niedostepny: {_OCR_INIT_ERROR or 'nieznany blad'}",
+            "watermark_found": False,
+            "watermark_count": 0,
+            "watermark_types": [],
+        }
 
     is_video = os.path.splitext(media_path)[1].lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
     cap = cv2.VideoCapture(os.path.abspath(media_path))

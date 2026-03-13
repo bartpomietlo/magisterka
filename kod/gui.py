@@ -262,7 +262,6 @@ def _fmt_eta(seconds: float) -> str:
 
 
 def _get_frame_count(path: str) -> int:
-    """Bezpiecznie pobiera liczbę klatek - zamyka cap natychmiast."""
     cap = cv2.VideoCapture(os.path.abspath(path))
     count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) if cap.isOpened() else 0
     cap.release()
@@ -298,15 +297,21 @@ class WatermarkWorker(QtCore.QThread):
             self.all_done.emit()
             return
 
-        # FIX: reset singletona OCR aby wymusic inicjalizacje w tym watku (QThread)
-        ocr_detector.reset_reader()
+        # FIX: NIE wywolujemy reset_reader() - niszczyloby to reader zaladowany w głównym watku.
+        # Zamiast tego warmup_reader() sprawdza czy juz zaladowany i loguje bledy do GUI.
+        engine, err = ocr_detector.warmup_reader(log_fn=self.log_line.emit)
+        if err or engine is None:
+            self.log_line.emit(f"[BŁĄD KRYTYCZNY] OCR nie mógł się zainicjalizować: {err}")
+            self.log_line.emit("Sprawdź czy easyocr lub paddlepaddle jest zainstalowane w venv.")
+            self.all_done.emit()
+            return
+
+        self.log_line.emit(f"[OCR] Engine: {engine} — gotowy.")
 
         original_base = getattr(config, "REPORTS_BASE_DIR", "reports")
         if self._output_dir:
             setattr(config, "REPORTS_BASE_DIR", self._output_dir)
 
-        # FIX: pre-oblicz liczby klatek dla wszystkich plikow PRZED petla
-        # (unikamy otwierania VideoCapture wewnatrz progress callback)
         all_frame_counts = [
             _get_frame_count(p) for p in self._files
         ]
@@ -332,7 +337,6 @@ class WatermarkWorker(QtCore.QThread):
                 frames_done = [0]
                 file_start_t = time.monotonic()
 
-                # FIX: pre-oblicz remaining_frames_after bez VideoCapture w closure
                 remaining_frames_after = sum(
                     max(1, all_frame_counts[j] // self._sample_rate)
                     for j in range(idx + 1, len(self._files))
@@ -364,7 +368,6 @@ class WatermarkWorker(QtCore.QThread):
                     elif len(args) >= 2:
                         self.frame_detected.emit(args[0], args[1])
 
-                # C2PA
                 c2pa_result: dict = {}
                 if c2pa_detector is not None:
                     try:
@@ -615,6 +618,30 @@ class MainWindow(QMainWindow):
 
         self.status = self.statusBar()
         self._apply_theme(True)
+
+        # FIX: Warm-up OCR w tle przy starcie GUI zeby nie inicjalizowac w QThread
+        if ocr_detector is not None:
+            QtCore.QTimer.singleShot(500, self._warmup_ocr)
+
+    def _warmup_ocr(self):
+        """Inicjalizuje OCR reader w głównym wątku przy starcie aplikacji."""
+        import threading
+        def _do():
+            engine, err = ocr_detector.warmup_reader()
+            if err:
+                # Bezpieczne logowanie z powrotem do głównego wątku
+                QtCore.QMetaObject.invokeMethod(
+                    self.logView, "append",
+                    Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(str, f"[OCR] BŁĄD inicjalizacji: {err}")
+                )
+            else:
+                QtCore.QMetaObject.invokeMethod(
+                    self.logView, "append",
+                    Qt.ConnectionType.QueuedConnection,
+                    QtCore.Q_ARG(str, f"[OCR] Engine gotowy: {engine}")
+                )
+        threading.Thread(target=_do, daemon=True).start()
 
     # -------------------- Resize --------------------
 
