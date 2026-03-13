@@ -7,7 +7,7 @@ from typing import Optional
 import cv2
 import numpy as np
 from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QSettings
 from PyQt6.QtGui import QTextCursor, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -42,6 +42,12 @@ COL_STATUS = 2
 COL_PCT    = 3
 COL_C2PA   = 4
 COL_CSV    = 5
+
+_SETTINGS_ORG  = "WatermarkDetector"
+_SETTINGS_APP  = "GUI"
+_KEY_MAIN_SPLIT   = "splitter/main"
+_KEY_LEFT_SPLIT   = "splitter/left"
+_KEY_RIGHT_SPLIT  = "splitter/right"
 
 # ======================== QSS Themes ========================
 
@@ -98,7 +104,24 @@ QProgressBar {
 QProgressBar::chunk {
     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #89b4fa,stop:1 #a6e3a1); border-radius: 4px;
 }
-QSplitter::handle { background-color: #45475a; }
+QSplitter::handle {
+    background-color: #45475a;
+}
+QSplitter::handle:horizontal {
+    width: 5px;
+    background-color: #45475a;
+    border-left: 1px solid #313244;
+    border-right: 1px solid #313244;
+}
+QSplitter::handle:vertical {
+    height: 5px;
+    background-color: #45475a;
+    border-top: 1px solid #313244;
+    border-bottom: 1px solid #313244;
+}
+QSplitter::handle:hover {
+    background-color: #89b4fa;
+}
 QStatusBar { background-color: #181825; color: #6c7086; border-top: 1px solid #45475a; }
 QLabel#preview_label, QLabel#zoom_label {
     background-color: #11111b; border: 1px solid #45475a; border-radius: 6px;
@@ -158,7 +181,24 @@ QProgressBar {
 QProgressBar::chunk {
     background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #1e66f5,stop:1 #40a02b); border-radius: 4px;
 }
-QSplitter::handle { background-color: #bcc0cc; }
+QSplitter::handle {
+    background-color: #bcc0cc;
+}
+QSplitter::handle:horizontal {
+    width: 5px;
+    background-color: #bcc0cc;
+    border-left: 1px solid #ccd0da;
+    border-right: 1px solid #ccd0da;
+}
+QSplitter::handle:vertical {
+    height: 5px;
+    background-color: #bcc0cc;
+    border-top: 1px solid #ccd0da;
+    border-bottom: 1px solid #ccd0da;
+}
+QSplitter::handle:hover {
+    background-color: #1e66f5;
+}
 QStatusBar { background-color: #dce0e8; color: #9ca0b0; border-top: 1px solid #bcc0cc; }
 QLabel#preview_label, QLabel#zoom_label {
     background-color: #e6e9ef; border: 1px solid #bcc0cc; border-radius: 6px;
@@ -273,38 +313,23 @@ def _safe_crop_for_zoom(
     padding: int = 40
 ) -> np.ndarray:
     h, w = frame_bgr.shape[:2]
-
-    bx1 = max(0, x1)
-    by1 = max(0, y1)
-    bx2 = min(w - 1, x2)
-    by2 = min(h - 1, y2)
-
-    cx1 = max(0, bx1 - padding)
-    cy1 = max(0, by1 - padding)
-    cx2 = min(w, bx2 + padding)
-    cy2 = min(h, by2 + padding)
-
+    bx1, by1 = max(0, x1), max(0, y1)
+    bx2, by2 = min(w - 1, x2), min(h - 1, y2)
+    cx1, cy1 = max(0, bx1 - padding), max(0, by1 - padding)
+    cx2, cy2 = min(w, bx2 + padding), min(h, by2 + padding)
     if bx2 + padding > w and cx1 > 0:
-        shift = min(cx1, (bx2 + padding) - w)
-        cx1 -= shift
+        cx1 -= min(cx1, (bx2 + padding) - w)
         cx2 = min(w, cx2)
     if by2 + padding > h and cy1 > 0:
-        shift = min(cy1, (by2 + padding) - h)
-        cy1 -= shift
+        cy1 -= min(cy1, (by2 + padding) - h)
         cy2 = min(h, cy2)
-
     if bx1 - padding < 0 and cx2 < w:
-        shift = min(w - cx2, padding - bx1)
-        cx2 += shift
+        cx2 += min(w - cx2, padding - bx1)
     if by1 - padding < 0 and cy2 < h:
-        shift = min(h - cy2, padding - by1)
-        cy2 += shift
-
+        cy2 += min(h - cy2, padding - by1)
     cx1, cy1, cx2, cy2 = max(0, cx1), max(0, cy1), min(w, cx2), min(h, cy2)
-
     if cx2 <= cx1 or cy2 <= cy1:
         return frame_bgr
-
     return frame_bgr[cy1:cy2, cx1:cx2]
 
 
@@ -312,20 +337,13 @@ def _fill_zoom_label(crop_bgr: np.ndarray, label_w: int, label_h: int) -> QPixma
     ch, cw = crop_bgr.shape[:2]
     if cw == 0 or ch == 0 or label_w == 0 or label_h == 0:
         return QPixmap()
-
     scale = max(label_w / cw, label_h / ch)
-    new_w = int(cw * scale)
-    new_h = int(ch * scale)
-
+    new_w, new_h = int(cw * scale), int(ch * scale)
     resized = cv2.resize(crop_bgr, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-
-    off_x = (new_w - label_w) // 2
-    off_y = (new_h - label_h) // 2
+    off_x, off_y = (new_w - label_w) // 2, (new_h - label_h) // 2
     cropped = resized[off_y:off_y + label_h, off_x:off_x + label_w]
-
     if cropped.shape[0] != label_h or cropped.shape[1] != label_w:
         cropped = cv2.resize(cropped, (label_w, label_h), interpolation=cv2.INTER_LINEAR)
-
     cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
     qt_img = QImage(cropped_rgb.data, label_w, label_h, 3 * label_w, QImage.Format.Format_RGB888)
     return QPixmap.fromImage(qt_img)
@@ -335,19 +353,14 @@ def _fill_zoom_label(crop_bgr: np.ndarray, label_w: int, label_h: int) -> QPixma
 
 class AspectRatioWidget(QWidget):
     """
-    Kontener zachowujacy proporcje 16:9 dla wewnetrznego labela.
-
-    KLUCZOWE: inner NIE jest dodawany do zadnego layoutu — jest bezposrednim
-    dzieckiem tego widgetu i pozycjonowany przez setGeometry w resizeEvent.
-    Dzieki temu label rzeczywiscie wypelnia caly dostepny obszar 16:9
-    zamiast kurczyc sie do minimalnego rozmiaru narzuconego przez layout.
+    Kontener zachowujacy proporcje 16:9.
+    inner NIE jest w layoutcie — pozycjonowany przez setGeometry w resizeEvent.
     """
     def __init__(self, inner: QLabel, aspect_w: int = 16, aspect_h: int = 9, parent=None):
         super().__init__(parent)
         self._inner = inner
         self._aw = aspect_w
         self._ah = aspect_h
-        # inner jest dzieckiem tego widgetu, ale BEZ layoutu
         inner.setParent(self)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
@@ -356,15 +369,12 @@ class AspectRatioWidget(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        avail_w = self.width()
-        avail_h = self.height()
-        # Oblicz max rozmiar zachowujacy proporcje aspect_w:aspect_h
+        avail_w, avail_h = self.width(), self.height()
         target_w = avail_w
         target_h = avail_w * self._ah // self._aw
         if target_h > avail_h:
             target_h = avail_h
             target_w = avail_h * self._aw // self._ah
-        # Wycentruj w dostepnym obszarze
         off_x = (avail_w - target_w) // 2
         off_y = (avail_h - target_h) // 2
         self._inner.setGeometry(off_x, off_y, target_w, target_h)
@@ -513,6 +523,8 @@ class MainWindow(QMainWindow):
         self.resize(1400, 800)
         self.setAcceptDrops(True)
 
+        self._settings = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+
         self.worker: Optional[WatermarkWorker] = None
         self.files: list[str] = []
         self.files_set: set[str] = set()
@@ -522,14 +534,23 @@ class MainWindow(QMainWindow):
 
         central = QWidget(self)
         self.setCentralWidget(central)
-        root = QHBoxLayout(central)
-        root.setSpacing(8)
-        root.setContentsMargins(10, 10, 10, 10)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(0)
+
+        # ============================================================
+        # GLOWNY POZIOMY SPLITTER: lewy panel <-> prawy panel
+        # Uzytkownik moze przeciagnac aby zmienic proporcje lewy/prawy
+        # ============================================================
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        root_layout.addWidget(self.main_splitter)
 
         # ---- LEFT PANEL ----
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setContentsMargins(0, 0, 4, 0)
+        left_layout.setSpacing(6)
 
         top = QHBoxLayout()
         top.setSpacing(6)
@@ -617,8 +638,13 @@ class MainWindow(QMainWindow):
         self.btn_stop.clicked.connect(self.stop_analysis)
         top.addWidget(self.btn_stop)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        left_layout.addWidget(splitter, 1)
+        # ============================================================
+        # LEWY PIONOWY SPLITTER: tabela <-> logi
+        # Uzytkownik moze przeciagnac aby zmienic proporcje tabela/logi
+        # ============================================================
+        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.left_splitter.setChildrenCollapsible(False)
+        left_layout.addWidget(self.left_splitter, 1)
 
         self.table_results = QTableWidget()
         self.table_results.setColumnCount(6)
@@ -637,12 +663,12 @@ class MainWindow(QMainWindow):
         self.table_results.setAlternatingRowColors(True)
         self.table_results.setToolTip("Dwuklik na wierszu — otworzy folder z raportem dla tego pliku.")
         self.table_results.cellDoubleClicked.connect(self._on_row_double_clicked)
-        splitter.addWidget(self.table_results)
+        self.left_splitter.addWidget(self.table_results)
 
         self.logView = QTextEdit()
         self.logView.setReadOnly(True)
-        splitter.addWidget(self.logView)
-        splitter.setSizes([350, 250])
+        self.left_splitter.addWidget(self.logView)
+        self.left_splitter.setSizes([350, 200])
 
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
@@ -669,15 +695,21 @@ class MainWindow(QMainWindow):
         self.btn_open_folder.setEnabled(False)
         bottom.addWidget(self.btn_open_folder)
 
-        root.addWidget(left_panel, 2)
+        self.main_splitter.addWidget(left_panel)
 
         # ---- RIGHT PANEL ----
-        right_panel = QSplitter(Qt.Orientation.Vertical)
+        # ============================================================
+        # PRAWY PIONOWY SPLITTER: podglad klatki <-> zoom detekcji
+        # Uzytkownik moze przeciagnac aby zmienic proporcje podglad/zoom
+        # ============================================================
+        self.right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_splitter.setChildrenCollapsible(False)
 
         # -- Podglad klatki (16:9) --
         preview_container = QWidget()
         preview_lay = QVBoxLayout(preview_container)
-        preview_lay.setContentsMargins(0, 0, 0, 0)
+        preview_lay.setContentsMargins(4, 0, 0, 0)
+        preview_lay.setSpacing(4)
         lbl_title = QLabel("<b>Klatka z kamery:</b>")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         preview_lay.addWidget(lbl_title)
@@ -685,31 +717,33 @@ class MainWindow(QMainWindow):
         self.lbl_preview = QLabel("Brak podglądu")
         self.lbl_preview.setObjectName("preview_label")
         self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # AspectRatioWidget NIE dodaje lbl_preview do layoutu wewnetrznie
-        # — pozycjonuje go przez setGeometry. Wiec tutaj dodajemy tylko kontener.
         self._preview_ar = AspectRatioWidget(self.lbl_preview, 16, 9)
         preview_lay.addWidget(self._preview_ar, 1)
-        right_panel.addWidget(preview_container)
+        self.right_splitter.addWidget(preview_container)
 
         # -- Zoom detekcji --
         zoom_container = QWidget()
         zoom_lay = QVBoxLayout(zoom_container)
-        zoom_lay.setContentsMargins(0, 10, 0, 0)
+        zoom_lay.setContentsMargins(4, 4, 0, 0)
+        zoom_lay.setSpacing(4)
         lbl_zoom_title = QLabel("<b>Przybliżenie detekcji (Zoom):</b>")
         lbl_zoom_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_lay.addWidget(lbl_zoom_title)
         self.lbl_zoom = QLabel("Brak detekcji")
         self.lbl_zoom.setObjectName("zoom_label")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_zoom.setMinimumSize(400, 150)
+        self.lbl_zoom.setMinimumSize(200, 100)
         self.lbl_zoom.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
         zoom_lay.addWidget(self.lbl_zoom, 1)
-        right_panel.addWidget(zoom_container)
+        self.right_splitter.addWidget(zoom_container)
 
-        right_panel.setSizes([500, 200])
-        root.addWidget(right_panel, 1)
+        self.right_splitter.setSizes([500, 200])
+        self.main_splitter.addWidget(self.right_splitter)
+
+        # Domyslne proporcje glownego splittera: 65% lewy, 35% prawy
+        self.main_splitter.setSizes([910, 490])
 
         self._drop_overlay = DropOverlay(central)
         self._drop_overlay.setGeometry(central.rect())
@@ -718,8 +752,42 @@ class MainWindow(QMainWindow):
         self.status = self.statusBar()
         self._apply_theme(True)
 
+        # Wczytaj zapisane pozycje splitterow
+        self._restore_splitters()
+
         if ocr_detector is not None:
             QtCore.QTimer.singleShot(500, self._warmup_ocr)
+
+    # ----------------------------------------------------------------
+    # Zapis / odczyt pozycji splitterow (QSettings)
+    # ----------------------------------------------------------------
+
+    def _restore_splitters(self):
+        """Wczytuje pozycje splitterow zapisane przy poprzednim zamknieciu."""
+        for key, splitter in [
+            (_KEY_MAIN_SPLIT,  self.main_splitter),
+            (_KEY_LEFT_SPLIT,  self.left_splitter),
+            (_KEY_RIGHT_SPLIT, self.right_splitter),
+        ]:
+            data = self._settings.value(key)
+            if data is not None:
+                try:
+                    splitter.restoreState(data)
+                except Exception:
+                    pass
+
+    def _save_splitters(self):
+        """Zapisuje aktualne pozycje splitterow."""
+        self._settings.setValue(_KEY_MAIN_SPLIT,  self.main_splitter.saveState())
+        self._settings.setValue(_KEY_LEFT_SPLIT,  self.left_splitter.saveState())
+        self._settings.setValue(_KEY_RIGHT_SPLIT, self.right_splitter.saveState())
+        self._settings.sync()
+
+    def closeEvent(self, event):
+        self._save_splitters()
+        super().closeEvent(event)
+
+    # ----------------------------------------------------------------
 
     def _warmup_ocr(self):
         import threading
@@ -850,7 +918,6 @@ class MainWindow(QMainWindow):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         qt_img = QImage(frame_rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_img)
-        # Skaluj do aktualnego rozmiaru labela (ktory teraz wypelnia caly 16:9 kontener)
         self.lbl_preview.setPixmap(
             pixmap.scaled(
                 self.lbl_preview.size(),
@@ -862,9 +929,7 @@ class MainWindow(QMainWindow):
         if detections:
             det = detections[0]
             x1, y1, x2, y2 = det.get("bbox", (0, 0, 10, 10))
-
             crop = _safe_crop_for_zoom(frame_bgr, x1, y1, x2, y2, padding=40)
-
             if crop.size > 0:
                 lw = max(1, self.lbl_zoom.width())
                 lh = max(1, self.lbl_zoom.height())
