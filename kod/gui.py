@@ -1,7 +1,7 @@
-# gui.py  (PyQt6 + Modern QSS) - STRICLY WATERMARK DETECTOR + PREVIEW
+# gui.py  (PyQt6 + Modern QSS) - WATERMARK DETECTOR + PREVIEW
 import os
 import sys
-from typing import Optional, Any
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QTextCursor, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QPushButton, QCheckBox, QGroupBox,
+    QSplitter, QPushButton, QGroupBox,
     QProgressBar, QTextEdit, QFileDialog, QMessageBox, QAbstractItemView,
     QTableWidget, QTableWidgetItem, QHeaderView, QDoubleSpinBox, QSpinBox,
     QFormLayout, QLabel, QLineEdit
@@ -55,7 +55,6 @@ QGroupBox {
     margin-top: 8px; padding: 4px; color: #89b4fa; font-weight: bold;
 }
 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; }
-QCheckBox { color: #cdd6f4; spacing: 6px; }
 QTableWidget {
     background-color: #181825; color: #cdd6f4;
     border: 1px solid #45475a; border-radius: 6px; gridline-color: #313244;
@@ -116,7 +115,6 @@ QGroupBox {
     margin-top: 8px; padding: 4px; color: #1e66f5; font-weight: bold;
 }
 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 6px; }
-QCheckBox { color: #4c4f69; spacing: 6px; }
 QTableWidget {
     background-color: #dce0e8; color: #4c4f69;
     border: 1px solid #bcc0cc; border-radius: 6px; gridline-color: #bcc0cc;
@@ -153,6 +151,48 @@ QLabel#preview_label, QLabel#zoom_label {
 }
 """
 
+# ============================ Toggle Switch ============================
+
+class ToggleSwitch(QtWidgets.QAbstractButton):
+    """Prosty toggle switch jako zamiennik QCheckBox."""
+
+    def __init__(self, label: str = "", parent=None):
+        super().__init__(parent)
+        self._label = label
+        self.setCheckable(True)
+        self.setChecked(False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+
+    def sizeHint(self):
+        fm = QtGui.QFontMetrics(self.font())
+        text_w = fm.horizontalAdvance(self._label) + 8 if self._label else 0
+        return QtCore.QSize(52 + text_w, 26)
+
+    def paintEvent(self, event):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        track_color = QtGui.QColor("#a6e3a1") if self.isChecked() else QtGui.QColor("#45475a")
+        p.setBrush(track_color)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(0, 3, 46, 20, 10, 10)
+
+        thumb_x = 26 if self.isChecked() else 2
+        p.setBrush(QtGui.QColor("#1e1e2e") if self.isChecked() else QtGui.QColor("#cdd6f4"))
+        p.drawEllipse(thumb_x, 5, 18, 16)
+
+        if self._label:
+            p.setPen(QtGui.QColor("#cdd6f4"))
+            p.setFont(self.font())
+            p.drawText(52, 0, self.width() - 52, 26, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._label)
+
+        p.end()
+
+    def isChecked(self) -> bool:
+        return super().isChecked()
+
+
 # ============================ helpers ============================
 
 def is_supported_file(path: str) -> bool:
@@ -163,21 +203,13 @@ def is_supported_file(path: str) -> bool:
 
 class WatermarkWorker(QtCore.QThread):
     progress = pyqtSignal(int, int)
-    file_started = pyqtSignal(int, str)
+    file_started = pyqtSignal(int, str, int)  # idx, name, total_frames
     file_finished = pyqtSignal(int, dict)
     log_line = pyqtSignal(str)
     frame_detected = pyqtSignal(np.ndarray, list)
     all_done = pyqtSignal()
 
-    def __init__(
-        self,
-        files: list[str],
-        confidence: float,
-        sample_rate: int,
-        output_dir: str,
-        detailed_scan: bool,
-        parent=None,
-    ):
+    def __init__(self, files, confidence, sample_rate, output_dir, detailed_scan, parent=None):
         super().__init__(parent)
         self._files = files
         self._confidence = confidence
@@ -185,11 +217,12 @@ class WatermarkWorker(QtCore.QThread):
         self._output_dir = output_dir
         self._detailed_scan = detailed_scan
         self._stop = False
+        self._current_total_frames = 0
 
-    def stop(self) -> None:
+    def stop(self):
         self._stop = True
 
-    def run(self) -> None:
+    def run(self):
         if ocr_detector is None:
             self.log_line.emit("[BŁĄD] Moduł ocr_detector nie został poprawnie załadowany.")
             self.all_done.emit()
@@ -203,9 +236,18 @@ class WatermarkWorker(QtCore.QThread):
             for idx, path in enumerate(self._files):
                 if self._stop:
                     break
-                
+
                 fname = os.path.basename(path)
-                self.file_started.emit(idx, fname)
+
+                # Sprawdź liczbę klatek (dla wideo)
+                total_frames = 0
+                cap = cv2.VideoCapture(os.path.abspath(path))
+                if cap.isOpened():
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    cap.release()
+                self._current_total_frames = total_frames
+
+                self.file_started.emit(idx, fname, total_frames)
                 self.log_line.emit(f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} (Conf: {self._confidence}, Sample: {self._sample_rate}, Detailed: {self._detailed_scan})")
 
                 def cb(curr, tot):
@@ -227,19 +269,56 @@ class WatermarkWorker(QtCore.QThread):
                         detailed_scan=self._detailed_scan,
                         preview_callback=preview_cb
                     )
-                    
                     details = res if isinstance(res, dict) else {}
                     details["full_path"] = os.path.abspath(path)
-                    
+                    details["total_frames"] = total_frames
                 except Exception as e:
                     self.log_line.emit(f"[BŁĄD] {fname}: {e}")
-                    details = {"status": "ERROR", "full_path": os.path.abspath(path), "error": str(e)}
+                    details = {"status": "ERROR", "full_path": os.path.abspath(path), "error": str(e), "total_frames": total_frames}
 
                 self.file_finished.emit(idx, details)
         finally:
-             setattr(config, "REPORTS_BASE_DIR", original_base)
+            setattr(config, "REPORTS_BASE_DIR", original_base)
 
         self.all_done.emit()
+
+
+# ============================ Drop Area ============================
+
+class DropTableWidget(QTableWidget):
+    files_dropped = pyqtSignal(list)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            paths = []
+            for url in event.mimeData().urls():
+                local = url.toLocalFile()
+                if os.path.isdir(local):
+                    for root, _, files in os.walk(local):
+                        for f in files:
+                            paths.append(os.path.join(root, f))
+                else:
+                    paths.append(local)
+            self.files_dropped.emit(paths)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
 
 
 # ============================ GUI ============================
@@ -248,58 +327,86 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Watermark Detector (PyQt6) z Podglądem")
-        self.resize(1300, 750)
+        self.resize(1400, 800)
 
         self.worker: Optional[WatermarkWorker] = None
         self.files: list[str] = []
         self.files_set: set[str] = set()
         self.report_paths: dict[int, str] = {}
         self.current_run_dir: Optional[str] = None
+        # Przechowujemy dane per-plik: total_frames, detected_frames
+        self._file_frame_data: dict[int, dict] = {}
 
         central = QWidget(self)
         self.setCentralWidget(central)
-        root = QHBoxLayout(central) 
+        root = QHBoxLayout(central)
         root.setSpacing(8)
         root.setContentsMargins(10, 10, 10, 10)
 
-        # ---- LEFT PANEL (Controls + Table + Log) ----
+        # ---- LEFT PANEL ----
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0,0,0,0)
-        
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
         top = QHBoxLayout()
         top.setSpacing(6)
         left_layout.addLayout(top)
 
         self.btn_pick_files = QPushButton("📂 Dodaj pliki…")
+        self.btn_pick_files.setToolTip("Dodaj pojedyncze pliki wideo lub obrazów do kolejki analizy")
         self.btn_pick_files.clicked.connect(self.pick_files)
         top.addWidget(self.btn_pick_files)
 
         self.btn_pick_folder = QPushButton("📁 Dodaj folder…")
+        self.btn_pick_folder.setToolTip("Dodaj cały folder — wszystkie obsługiwane pliki zostaną dodane rekurencyjnie")
         self.btn_pick_folder.clicked.connect(self.pick_folder)
         top.addWidget(self.btn_pick_folder)
 
         self.grp_opts = QGroupBox("Parametry OCR (Watermark)")
         opts_lay = QVBoxLayout(self.grp_opts)
         opts_lay.setContentsMargins(8, 4, 8, 4)
-        
+
         param_lay = QFormLayout()
+
         self.spin_conf = QDoubleSpinBox()
         self.spin_conf.setRange(0.1, 1.0)
         self.spin_conf.setSingleStep(0.05)
         self.spin_conf.setValue(0.60)
-        
+        self.spin_conf.setToolTip(
+            "OCR Confidence — minimalna pewność rozpoznania tekstu (0.1–1.0).\n"
+            "Niższa wartość = więcej detekcji (ale też fałszywe alarmy).\n"
+            "Wyższa wartość = tylko bardzo pewne wyniki. Zalecane: 0.55–0.70."
+        )
+
         self.spin_sample = QSpinBox()
         self.spin_sample.setRange(1, 300)
         self.spin_sample.setValue(30)
-        
-        param_lay.addRow("OCR Confidence:", self.spin_conf)
-        param_lay.addRow("Sample rate:", self.spin_sample)
-        
-        self.chk_detailed = QCheckBox("Szczegółowa analiza (Dwufazowa)")
-        self.chk_detailed.setChecked(False)
-        param_lay.addRow("", self.chk_detailed)
-        
+        self.spin_sample.setToolTip(
+            "Sample Rate — co ile klatek wideo jest analizowana jedna klatka.\n"
+            "Wartość 30 = analizuj co 30. klatkę (1 raz na sekundę przy 30fps).\n"
+            "Mniejsza wartość = dokładniej, ale wolniej. Zalecane: 15–30."
+        )
+
+        lbl_conf = QLabel("OCR Confidence:")
+        lbl_conf.setToolTip(self.spin_conf.toolTip())
+        lbl_sample = QLabel("Sample rate:")
+        lbl_sample.setToolTip(self.spin_sample.toolTip())
+
+        param_lay.addRow(lbl_conf, self.spin_conf)
+        param_lay.addRow(lbl_sample, self.spin_sample)
+
+        # Toggle switch zamiast checkboxa
+        self.toggle_detailed = ToggleSwitch("Szczegółowa analiza (Dwufazowa)")
+        self.toggle_detailed.setToolTip(
+            "Tryb dwufazowy — po szybkim skanie uruchamia zaawansowane filtry obrazu\n"
+            "(CLAHE, Top-Hat, gamma, odwrócone kolory) na klatkach bez detekcji.\n"
+            "Wolniejszy, ale wykrywa trudne watermarki (np. białe na jasnym tle)."
+        )
+        toggle_row = QHBoxLayout()
+        toggle_row.addWidget(self.toggle_detailed)
+        toggle_row.addStretch()
+        param_lay.addRow("", toggle_row)
+
         dir_lay = QHBoxLayout()
         self.txt_output_dir = QLineEdit()
         self.txt_output_dir.setPlaceholderText("Domyślny folder z config.py")
@@ -308,16 +415,16 @@ class MainWindow(QMainWindow):
         self.btn_pick_out_dir.clicked.connect(self.pick_output_dir)
         dir_lay.addWidget(self.txt_output_dir)
         dir_lay.addWidget(self.btn_pick_out_dir)
-        
+
         opts_lay.addLayout(param_lay)
         opts_lay.addLayout(dir_lay)
 
         top.addWidget(self.grp_opts, 1)
 
-        self.chk_dark = QCheckBox("🌙 Ciemny")
-        self.chk_dark.setChecked(True)
-        self.chk_dark.toggled.connect(self._apply_theme)
-        top.addWidget(self.chk_dark)
+        self.toggle_dark = ToggleSwitch("Ciemny")
+        self.toggle_dark.setChecked(True)
+        self.toggle_dark.toggled.connect(self._apply_theme)
+        top.addWidget(self.toggle_dark)
 
         self.btn_start = QPushButton("▶ START")
         self.btn_start.setObjectName("btn_start")
@@ -334,22 +441,28 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         left_layout.addWidget(splitter, 1)
 
-        self.table_results = QTableWidget()
-        self.table_results.setColumnCount(4)
-        self.table_results.setHorizontalHeaderLabels(["Plik", "Typ", "Liczba Detekcji", "Ścieżka CSV/Raport"])
+        # Tabela z drag&drop i nowymi kolumnami
+        self.table_results = DropTableWidget()
+        self.table_results.files_dropped.connect(self._add_files)
+        self.table_results.setColumnCount(5)
+        self.table_results.setHorizontalHeaderLabels([
+            "Plik", "Typ", "Status AI", "% AI w wideo", "Raport CSV"
+        ])
         self.table_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.table_results.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.table_results.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_results.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_results.setAlternatingRowColors(True)
+        self.table_results.setToolTip("Przeciągnij i upuść pliki lub foldery tutaj (Drag & Drop)")
         splitter.addWidget(self.table_results)
 
         self.logView = QTextEdit()
         self.logView.setReadOnly(True)
         splitter.addWidget(self.logView)
-        splitter.setSizes([300, 300])
+        splitter.setSizes([350, 250])
 
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
@@ -361,24 +474,26 @@ class MainWindow(QMainWindow):
         self.progressBar.setFormat("%p%")
         bottom.addWidget(self.progressBar, 1)
 
-        self.btn_open_folder = QPushButton("📂 Open Output Folder")
+        self.btn_open_folder = QPushButton("📂 Otwórz folder wyników")
+        self.btn_open_folder.setToolTip(
+            "Otwiera folder z zapisanymi klatkami i raportami CSV z ostatniej analizy.\n"
+            "Każdy plik ma własny podfolder z nazwą i znacznikiem czasu."
+        )
         self.btn_open_folder.clicked.connect(self.open_output_folder)
         self.btn_open_folder.setEnabled(False)
         bottom.addWidget(self.btn_open_folder)
 
-        root.addWidget(left_panel, 2) 
+        root.addWidget(left_panel, 2)
 
-        # ---- RIGHT PANEL (Preview & Zoom) ----
+        # ---- RIGHT PANEL ----
         right_panel = QSplitter(Qt.Orientation.Vertical)
-        
+
         preview_container = QWidget()
         preview_lay = QVBoxLayout(preview_container)
-        preview_lay.setContentsMargins(0,0,0,0)
-        
+        preview_lay.setContentsMargins(0, 0, 0, 0)
         lbl_title = QLabel("<b>Klatka z kamery:</b>")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         preview_lay.addWidget(lbl_title)
-        
         self.lbl_preview = QLabel("Brak podglądu")
         self.lbl_preview.setObjectName("preview_label")
         self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -389,12 +504,10 @@ class MainWindow(QMainWindow):
 
         zoom_container = QWidget()
         zoom_lay = QVBoxLayout(zoom_container)
-        zoom_lay.setContentsMargins(0,10,0,0)
-        
+        zoom_lay.setContentsMargins(0, 10, 0, 0)
         lbl_zoom = QLabel("<b>Przybliżenie detekcji (Zoom):</b>")
         lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_lay.addWidget(lbl_zoom)
-        
         self.lbl_zoom = QLabel("Brak detekcji")
         self.lbl_zoom.setObjectName("zoom_label")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -403,8 +516,8 @@ class MainWindow(QMainWindow):
         zoom_lay.addWidget(self.lbl_zoom, 1)
         right_panel.addWidget(zoom_container)
 
-        right_panel.setSizes([450, 150]) 
-        root.addWidget(right_panel, 1) 
+        right_panel.setSizes([450, 150])
+        root.addWidget(right_panel, 1)
 
         self.status = self.statusBar()
         self._apply_theme(True)
@@ -425,7 +538,7 @@ class MainWindow(QMainWindow):
         self.logView.moveCursor(QTextCursor.MoveOperation.End)
         self.status.showMessage(text, 4000)
 
-    def _add_files(self, paths: list[str]) -> None:
+    def _add_files(self, paths: list) -> None:
         added = 0
         for p in paths:
             if not p or not is_supported_file(p):
@@ -435,21 +548,29 @@ class MainWindow(QMainWindow):
                 continue
             self.files_set.add(ap)
             self.files.append(ap)
-            
+
             row = self.table_results.rowCount()
             self.table_results.insertRow(row)
-            
+
             fname = os.path.basename(ap)
             ext = os.path.splitext(fname)[1].lower()
-            file_type = "Video" if ext in {".mp4", ".mkv", ".avi", ".webm"} else "Image"
-            
+            file_type = "Video" if ext in {".mp4", ".mkv", ".avi", ".webm", ".mov"} else "Image"
+
             self.table_results.setItem(row, 0, QTableWidgetItem(fname))
             self.table_results.setItem(row, 1, QTableWidgetItem(file_type))
-            self.table_results.setItem(row, 2, QTableWidgetItem("-"))
-            self.table_results.setItem(row, 3, QTableWidgetItem("-"))
-            
+
+            status_item = QTableWidgetItem("⏳ Oczekuje")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table_results.setItem(row, 2, status_item)
+
+            pct_item = QTableWidgetItem("-")
+            pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table_results.setItem(row, 3, pct_item)
+
+            self.table_results.setItem(row, 4, QTableWidgetItem("-"))
+
             added += 1
-            
+
         if added:
             self.btn_start.setEnabled(True)
             self.append_log(f"> Dodano {added} plik(ów). Razem: {len(self.files)}.")
@@ -461,43 +582,37 @@ class MainWindow(QMainWindow):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         qt_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_img)
-        
         scaled_pixmap = pixmap.scaled(
-            self.lbl_preview.size(), 
-            Qt.AspectRatioMode.KeepAspectRatio, 
+            self.lbl_preview.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
         self.lbl_preview.setPixmap(scaled_pixmap)
 
-        if detections and len(detections) > 0:
+        if detections:
             det = detections[0]
-            x1, y1, x2, y2 = det.get("bbox", (0,0,10,10))
-            
+            x1, y1, x2, y2 = det.get("bbox", (0, 0, 10, 10))
             padding = 30
-            y1_p = max(0, y1 - padding)
-            y2_p = min(h, y2 + padding)
-            x1_p = max(0, x1 - padding)
-            x2_p = min(w, x2 + padding)
-            
-            crop_bgr = frame_bgr[y1_p:y2_p, x1_p:x2_p]
-            
+            crop_bgr = frame_bgr[
+                max(0, y1 - padding):min(h, y2 + padding),
+                max(0, x1 - padding):min(w, x2 + padding)
+            ]
             if crop_bgr.size > 0:
                 ch_c, cw_c, c_c = crop_bgr.shape
-                crop_bytes_per_line = c_c * cw_c
                 crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-                crop_qt = QImage(crop_rgb.data, cw_c, ch_c, crop_bytes_per_line, QImage.Format.Format_RGB888)
-                crop_pix = QPixmap.fromImage(crop_qt)
-                
-                scaled_crop = crop_pix.scaled(
-                    self.lbl_zoom.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
+                crop_qt = QImage(crop_rgb.data, cw_c, ch_c, c_c * cw_c, QImage.Format.Format_RGB888)
+                self.lbl_zoom.setPixmap(
+                    QPixmap.fromImage(crop_qt).scaled(
+                        self.lbl_zoom.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
                 )
-                self.lbl_zoom.setPixmap(scaled_crop)
         else:
             self.lbl_zoom.setText("Brak detekcji")
 
     # -------------------- Actions --------------------
+
     def pick_output_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Wybierz folder docelowy dla raportów")
         if folder:
@@ -505,8 +620,7 @@ class MainWindow(QMainWindow):
 
     def pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Wybierz pliki do analizy",
-            "",
+            self, "Wybierz pliki do analizy", "",
             "Media (*.mp4 *.mov *.avi *.mkv *.webm *.jpg *.jpeg *.png *.bmp *.webp *.tif *.tiff);;Wszystkie pliki (*.*)",
         )
         if paths:
@@ -514,8 +628,7 @@ class MainWindow(QMainWindow):
 
     def pick_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "Wybierz folder z nagraniami/obrazami",
-            "",
+            self, "Wybierz folder z nagraniami/obrazami", "",
             QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks,
         )
         if not folder:
@@ -535,19 +648,21 @@ class MainWindow(QMainWindow):
         if not self.files:
             QMessageBox.warning(self, "Brak plików", "Najpierw dodaj pliki lub folder do analizy.")
             return
-            
+
+        self._file_frame_data = {}
+
         for btn in (self.btn_start, self.btn_pick_files, self.btn_pick_folder):
             btn.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progressBar.setValue(0)
         self.lbl_preview.setText("Analiza w toku...")
         self.lbl_zoom.setText("Analiza w toku...")
-        
-        conf_val     = self.spin_conf.value()
-        sample_val   = self.spin_sample.value()
-        out_dir      = self.txt_output_dir.text().strip()
-        detailed_val = self.chk_detailed.isChecked()
-        
+
+        conf_val = self.spin_conf.value()
+        sample_val = self.spin_sample.value()
+        out_dir = self.txt_output_dir.text().strip()
+        detailed_val = self.toggle_detailed.isChecked()
+
         self.worker = WatermarkWorker(self.files, conf_val, sample_val, out_dir, detailed_val, parent=self)
         self.worker.progress.connect(self.on_progress)
         self.worker.file_started.connect(self.on_file_started)
@@ -566,13 +681,12 @@ class MainWindow(QMainWindow):
         if not self.current_run_dir or not os.path.isdir(self.current_run_dir):
             QMessageBox.information(self, "Brak Outputu", "Najpierw przeprowadź analizę.")
             return
-        
         path_to_open = os.path.abspath(self.current_run_dir)
         try:
             if sys.platform.startswith("win"):
                 os.startfile(path_to_open)  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
-                QtCore.QProcess.startDetached("open",     [path_to_open])
+                QtCore.QProcess.startDetached("open", [path_to_open])
             else:
                 QtCore.QProcess.startDetached("xdg-open", [path_to_open])
         except Exception as e:
@@ -585,9 +699,14 @@ class MainWindow(QMainWindow):
         if tot > 0:
             self.progressBar.setValue(max(0, min(100, int(curr * 100 / max(1, tot)))))
 
-    @pyqtSlot(int, str)
-    def on_file_started(self, idx: int, name: str) -> None:
+    @pyqtSlot(int, str, int)
+    def on_file_started(self, idx: int, name: str, total_frames: int) -> None:
         self.progressBar.setValue(0)
+        self._file_frame_data[idx] = {"total_frames": total_frames, "detected_frames": 0}
+        # Ustaw status na "w trakcie"
+        status_item = self.table_results.item(idx, 2)
+        if status_item:
+            status_item.setText("🔍 Analiza...")
 
     @pyqtSlot(int, dict)
     def on_file_finished(self, idx: int, details: dict) -> None:
@@ -596,24 +715,54 @@ class MainWindow(QMainWindow):
             self.report_paths[idx] = folder
             self.current_run_dir = os.path.dirname(folder)
             self.btn_open_folder.setEnabled(True)
-            
-        count = details.get("watermark_count")
-        if count is not None and count > 0:
+
+        count = details.get("watermark_count", 0) or 0
+        total_frames = details.get("total_frames", 0) or 0
+        sample_rate = self.spin_sample.value()
+
+        # Szacunkowa liczba przeanalizowanych klatek
+        sampled_frames = max(1, total_frames // sample_rate) if total_frames > 0 else 1
+
+        # --- Kolumna Status AI ---
+        if count > 0:
             types = ", ".join(details.get("watermark_types", []))
-            self.table_results.setItem(idx, 2, QTableWidgetItem(f"{count} ({types})"))
+            status_text = f"🔴 AI DETECTED\n{types}"
+            status_item = QTableWidgetItem(status_text)
+            status_item.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
         else:
-            self.table_results.setItem(idx, 2, QTableWidgetItem("Brak detekcji"))
-            
+            status_item = QTableWidgetItem("✅ AI CLEAR")
+            status_item.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
+        status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table_results.setItem(idx, 2, status_item)
+
+        # --- Kolumna % AI w wideo ---
+        if total_frames > 0 and count > 0:
+            # count = liczba klatek z detekcją, sampled_frames = ile przeskanowano
+            ai_pct = min(100.0, count / sampled_frames * 100)
+            clear_pct = 100.0 - ai_pct
+            pct_text = f"🔴 {ai_pct:.0f}% AI  |  ✅ {clear_pct:.0f}% CLEAR"
+            pct_item = QTableWidgetItem(pct_text)
+            if ai_pct >= 50:
+                pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
+            else:
+                pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#fab387")))
+        else:
+            pct_item = QTableWidgetItem("✅ 100% CLEAR")
+            pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
+        pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table_results.setItem(idx, 3, pct_item)
+
+        # --- Kolumna CSV ---
         report_file = details.get("csv_path", folder if folder else "Brak")
-        self.table_results.setItem(idx, 3, QTableWidgetItem(str(report_file)))
-        
-        self.append_log(f"   ➔ Plik zakończony. Znaleziono {count or 0} watermarków.")
+        self.table_results.setItem(idx, 4, QTableWidgetItem(str(report_file)))
+
+        self.append_log(f"   ➔ Plik zakończony. Znaleziono {count} watermarków.")
+        self.table_results.resizeRowsToContents()
 
     @pyqtSlot()
     def on_all_done(self) -> None:
         self.append_log("> Analiza wszystkich plików zakończona.")
         self.progressBar.setValue(0)
-        
         for btn in (self.btn_pick_files, self.btn_pick_folder):
             btn.setEnabled(True)
         self.btn_start.setEnabled(len(self.files) > 0)
