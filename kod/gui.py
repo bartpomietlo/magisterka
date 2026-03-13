@@ -154,8 +154,6 @@ QLabel#preview_label, QLabel#zoom_label {
 # ============================ Toggle Switch ============================
 
 class ToggleSwitch(QtWidgets.QAbstractButton):
-    """Prosty toggle switch jako zamiennik QCheckBox."""
-
     def __init__(self, label: str = "", parent=None):
         super().__init__(parent)
         self._label = label
@@ -172,25 +170,67 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
     def paintEvent(self, event):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-
         track_color = QtGui.QColor("#a6e3a1") if self.isChecked() else QtGui.QColor("#45475a")
         p.setBrush(track_color)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(0, 3, 46, 20, 10, 10)
-
         thumb_x = 26 if self.isChecked() else 2
         p.setBrush(QtGui.QColor("#1e1e2e") if self.isChecked() else QtGui.QColor("#cdd6f4"))
         p.drawEllipse(thumb_x, 5, 18, 16)
-
         if self._label:
             p.setPen(QtGui.QColor("#cdd6f4"))
             p.setFont(self.font())
-            p.drawText(52, 0, self.width() - 52, 26, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._label)
-
+            p.drawText(52, 0, self.width() - 52, 26,
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._label)
         p.end()
 
-    def isChecked(self) -> bool:
-        return super().isChecked()
+
+# ============================ Drop Overlay ============================
+
+class DropOverlay(QWidget):
+    """Półprzezroczysta nakładka na całe okno podczas drag."""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.hide()
+
+    def resizeEvent(self, event):
+        self.setGeometry(self.parent().rect())  # type: ignore[union-attr]
+
+    def paintEvent(self, event):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Półprzezroczyste tło
+        p.fillRect(self.rect(), QtGui.QColor(30, 30, 46, 200))
+
+        # Ramka
+        pen = QtGui.QPen(QtGui.QColor("#89b4fa"), 4, Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(self.rect().adjusted(20, 20, -20, -20), 18, 18)
+
+        # Ikona i tekst
+        p.setPen(QtGui.QColor("#cdd6f4"))
+        font = QtGui.QFont("Segoe UI", 28, QtGui.QFont.Weight.Bold)
+        p.setFont(font)
+        p.drawText(self.rect().adjusted(0, -60, 0, 0),
+                   Qt.AlignmentFlag.AlignCenter, "📂")
+
+        font2 = QtGui.QFont("Segoe UI", 16, QtGui.QFont.Weight.Bold)
+        p.setFont(font2)
+        p.setPen(QtGui.QColor("#89b4fa"))
+        p.drawText(self.rect().adjusted(0, 40, 0, 0),
+                   Qt.AlignmentFlag.AlignCenter, "Upuść pliki lub folder tutaj")
+
+        font3 = QtGui.QFont("Segoe UI", 10)
+        p.setFont(font3)
+        p.setPen(QtGui.QColor("#6c7086"))
+        p.drawText(self.rect().adjusted(0, 80, 0, 0),
+                   Qt.AlignmentFlag.AlignCenter, "obsługiwane: mp4 mov avi mkv webm jpg png bmp")
+        p.end()
 
 
 # ============================ helpers ============================
@@ -199,11 +239,24 @@ def is_supported_file(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in SUPPORTED_EXTS
 
 
+def collect_paths_from_urls(urls) -> list:
+    paths = []
+    for url in urls:
+        local = url.toLocalFile()
+        if os.path.isdir(local):
+            for root, _, files in os.walk(local):
+                for f in files:
+                    paths.append(os.path.join(root, f))
+        else:
+            paths.append(local)
+    return paths
+
+
 # ============================ Worker ============================
 
 class WatermarkWorker(QtCore.QThread):
     progress = pyqtSignal(int, int)
-    file_started = pyqtSignal(int, str, int)  # idx, name, total_frames
+    file_started = pyqtSignal(int, str, int)
     file_finished = pyqtSignal(int, dict)
     log_line = pyqtSignal(str)
     frame_detected = pyqtSignal(np.ndarray, list)
@@ -217,7 +270,6 @@ class WatermarkWorker(QtCore.QThread):
         self._output_dir = output_dir
         self._detailed_scan = detailed_scan
         self._stop = False
-        self._current_total_frames = 0
 
     def stop(self):
         self._stop = True
@@ -238,17 +290,17 @@ class WatermarkWorker(QtCore.QThread):
                     break
 
                 fname = os.path.basename(path)
-
-                # Sprawdź liczbę klatek (dla wideo)
                 total_frames = 0
                 cap = cv2.VideoCapture(os.path.abspath(path))
                 if cap.isOpened():
                     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                     cap.release()
-                self._current_total_frames = total_frames
 
                 self.file_started.emit(idx, fname, total_frames)
-                self.log_line.emit(f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} (Conf: {self._confidence}, Sample: {self._sample_rate}, Detailed: {self._detailed_scan})")
+                self.log_line.emit(
+                    f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} "
+                    f"(Conf: {self._confidence}, Sample: {self._sample_rate}, Detailed: {self._detailed_scan})"
+                )
 
                 def cb(curr, tot):
                     self.progress.emit(int(curr), int(tot))
@@ -274,51 +326,14 @@ class WatermarkWorker(QtCore.QThread):
                     details["total_frames"] = total_frames
                 except Exception as e:
                     self.log_line.emit(f"[BŁĄD] {fname}: {e}")
-                    details = {"status": "ERROR", "full_path": os.path.abspath(path), "error": str(e), "total_frames": total_frames}
+                    details = {"status": "ERROR", "full_path": os.path.abspath(path),
+                               "error": str(e), "total_frames": total_frames}
 
                 self.file_finished.emit(idx, details)
         finally:
             setattr(config, "REPORTS_BASE_DIR", original_base)
 
         self.all_done.emit()
-
-
-# ============================ Drop Area ============================
-
-class DropTableWidget(QTableWidget):
-    files_dropped = pyqtSignal(list)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            super().dragMoveEvent(event)
-
-    def dropEvent(self, event):
-        if event.mimeData().hasUrls():
-            paths = []
-            for url in event.mimeData().urls():
-                local = url.toLocalFile()
-                if os.path.isdir(local):
-                    for root, _, files in os.walk(local):
-                        for f in files:
-                            paths.append(os.path.join(root, f))
-                else:
-                    paths.append(local)
-            self.files_dropped.emit(paths)
-            event.acceptProposedAction()
-        else:
-            super().dropEvent(event)
 
 
 # ============================ GUI ============================
@@ -328,13 +343,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Watermark Detector (PyQt6) z Podglądem")
         self.resize(1400, 800)
+        self.setAcceptDrops(True)  # drag&drop na całe okno
 
         self.worker: Optional[WatermarkWorker] = None
         self.files: list[str] = []
         self.files_set: set[str] = set()
         self.report_paths: dict[int, str] = {}
         self.current_run_dir: Optional[str] = None
-        # Przechowujemy dane per-plik: total_frames, detected_frames
         self._file_frame_data: dict[int, dict] = {}
 
         central = QWidget(self)
@@ -395,7 +410,6 @@ class MainWindow(QMainWindow):
         param_lay.addRow(lbl_conf, self.spin_conf)
         param_lay.addRow(lbl_sample, self.spin_sample)
 
-        # Toggle switch zamiast checkboxa
         self.toggle_detailed = ToggleSwitch("Szczegółowa analiza (Dwufazowa)")
         self.toggle_detailed.setToolTip(
             "Tryb dwufazowy — po szybkim skanie uruchamia zaawansowane filtry obrazu\n"
@@ -441,9 +455,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         left_layout.addWidget(splitter, 1)
 
-        # Tabela z drag&drop i nowymi kolumnami
-        self.table_results = DropTableWidget()
-        self.table_results.files_dropped.connect(self._add_files)
+        self.table_results = QTableWidget()
         self.table_results.setColumnCount(5)
         self.table_results.setHorizontalHeaderLabels([
             "Plik", "Typ", "Status AI", "% AI w wideo", "Raport CSV"
@@ -456,7 +468,6 @@ class MainWindow(QMainWindow):
         self.table_results.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_results.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_results.setAlternatingRowColors(True)
-        self.table_results.setToolTip("Przeciągnij i upuść pliki lub foldery tutaj (Drag & Drop)")
         splitter.addWidget(self.table_results)
 
         self.logView = QTextEdit()
@@ -498,7 +509,9 @@ class MainWindow(QMainWindow):
         self.lbl_preview.setObjectName("preview_label")
         self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_preview.setMinimumSize(400, 300)
-        self.lbl_preview.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.lbl_preview.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
         preview_lay.addWidget(self.lbl_preview, 1)
         right_panel.addWidget(preview_container)
 
@@ -512,15 +525,30 @@ class MainWindow(QMainWindow):
         self.lbl_zoom.setObjectName("zoom_label")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_zoom.setMinimumSize(400, 150)
-        self.lbl_zoom.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.lbl_zoom.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
         zoom_lay.addWidget(self.lbl_zoom, 1)
         right_panel.addWidget(zoom_container)
 
         right_panel.setSizes([450, 150])
         root.addWidget(right_panel, 1)
 
+        # Nakładka drag&drop — na wierzchu centralWidget
+        self._drop_overlay = DropOverlay(central)
+        self._drop_overlay.setGeometry(central.rect())
+        self._drop_overlay.raise_()
+
         self.status = self.statusBar()
         self._apply_theme(True)
+
+    # -------------------- Resize --------------------
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cw = self.centralWidget()
+        if cw and self._drop_overlay:
+            self._drop_overlay.setGeometry(cw.rect())
 
     # -------------------- Theme --------------------
 
@@ -530,6 +558,36 @@ class MainWindow(QMainWindow):
             return
         app.setStyle("Fusion")  # type: ignore[union-attr]
         app.setStyleSheet(_DARK_QSS if dark else _LIGHT_QSS)  # type: ignore[union-attr]
+
+    # -------------------- Drag & Drop (całe okno) --------------------
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            self._drop_overlay.setGeometry(self.centralWidget().rect())  # type: ignore
+            self._drop_overlay.show()
+            self._drop_overlay.raise_()
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragLeaveEvent(self, event: QtGui.QDragLeaveEvent):
+        self._drop_overlay.hide()
+        super().dragLeaveEvent(event)
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QtGui.QDropEvent):
+        self._drop_overlay.hide()
+        if event.mimeData().hasUrls():
+            paths = collect_paths_from_urls(event.mimeData().urls())
+            self._add_files(paths)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
 
     # -------------------- Helpers --------------------
 
@@ -568,7 +626,6 @@ class MainWindow(QMainWindow):
             self.table_results.setItem(row, 3, pct_item)
 
             self.table_results.setItem(row, 4, QTableWidgetItem("-"))
-
             added += 1
 
         if added:
@@ -578,17 +635,14 @@ class MainWindow(QMainWindow):
     @pyqtSlot(np.ndarray, list)
     def set_preview_image(self, frame_bgr: np.ndarray, detections: list) -> None:
         h, w, ch = frame_bgr.shape
-        bytes_per_line = ch * w
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        qt_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        qt_img = QImage(frame_rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_img)
-        scaled_pixmap = pixmap.scaled(
-            self.lbl_preview.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
+        self.lbl_preview.setPixmap(
+            pixmap.scaled(self.lbl_preview.size(),
+                          Qt.AspectRatioMode.KeepAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation)
         )
-        self.lbl_preview.setPixmap(scaled_pixmap)
-
         if detections:
             det = detections[0]
             x1, y1, x2, y2 = det.get("bbox", (0, 0, 10, 10))
@@ -650,7 +704,6 @@ class MainWindow(QMainWindow):
             return
 
         self._file_frame_data = {}
-
         for btn in (self.btn_start, self.btn_pick_files, self.btn_pick_folder):
             btn.setEnabled(False)
         self.btn_stop.setEnabled(True)
@@ -658,12 +711,14 @@ class MainWindow(QMainWindow):
         self.lbl_preview.setText("Analiza w toku...")
         self.lbl_zoom.setText("Analiza w toku...")
 
-        conf_val = self.spin_conf.value()
-        sample_val = self.spin_sample.value()
-        out_dir = self.txt_output_dir.text().strip()
-        detailed_val = self.toggle_detailed.isChecked()
-
-        self.worker = WatermarkWorker(self.files, conf_val, sample_val, out_dir, detailed_val, parent=self)
+        self.worker = WatermarkWorker(
+            self.files,
+            self.spin_conf.value(),
+            self.spin_sample.value(),
+            self.txt_output_dir.text().strip(),
+            self.toggle_detailed.isChecked(),
+            parent=self
+        )
         self.worker.progress.connect(self.on_progress)
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_finished.connect(self.on_file_finished)
@@ -702,11 +757,10 @@ class MainWindow(QMainWindow):
     @pyqtSlot(int, str, int)
     def on_file_started(self, idx: int, name: str, total_frames: int) -> None:
         self.progressBar.setValue(0)
-        self._file_frame_data[idx] = {"total_frames": total_frames, "detected_frames": 0}
-        # Ustaw status na "w trakcie"
-        status_item = self.table_results.item(idx, 2)
-        if status_item:
-            status_item.setText("🔍 Analiza...")
+        self._file_frame_data[idx] = {"total_frames": total_frames}
+        item = self.table_results.item(idx, 2)
+        if item:
+            item.setText("🔍 Analiza...")
 
     @pyqtSlot(int, dict)
     def on_file_finished(self, idx: int, details: dict) -> None:
@@ -718,16 +772,11 @@ class MainWindow(QMainWindow):
 
         count = details.get("watermark_count", 0) or 0
         total_frames = details.get("total_frames", 0) or 0
-        sample_rate = self.spin_sample.value()
+        sampled_frames = max(1, total_frames // max(1, self.spin_sample.value())) if total_frames > 0 else 1
 
-        # Szacunkowa liczba przeanalizowanych klatek
-        sampled_frames = max(1, total_frames // sample_rate) if total_frames > 0 else 1
-
-        # --- Kolumna Status AI ---
         if count > 0:
             types = ", ".join(details.get("watermark_types", []))
-            status_text = f"🔴 AI DETECTED\n{types}"
-            status_item = QTableWidgetItem(status_text)
+            status_item = QTableWidgetItem(f"🔴 AI DETECTED\n{types}")
             status_item.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
         else:
             status_item = QTableWidgetItem("✅ AI CLEAR")
@@ -735,27 +784,20 @@ class MainWindow(QMainWindow):
         status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_results.setItem(idx, 2, status_item)
 
-        # --- Kolumna % AI w wideo ---
         if total_frames > 0 and count > 0:
-            # count = liczba klatek z detekcją, sampled_frames = ile przeskanowano
             ai_pct = min(100.0, count / sampled_frames * 100)
-            clear_pct = 100.0 - ai_pct
-            pct_text = f"🔴 {ai_pct:.0f}% AI  |  ✅ {clear_pct:.0f}% CLEAR"
-            pct_item = QTableWidgetItem(pct_text)
-            if ai_pct >= 50:
-                pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
-            else:
-                pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#fab387")))
+            pct_item = QTableWidgetItem(f"🔴 {ai_pct:.0f}% AI  |  ✅ {100 - ai_pct:.0f}% CLEAR")
+            pct_item.setForeground(QtGui.QBrush(
+                QtGui.QColor("#f38ba8") if ai_pct >= 50 else QtGui.QColor("#fab387")
+            ))
         else:
             pct_item = QTableWidgetItem("✅ 100% CLEAR")
             pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
         pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_results.setItem(idx, 3, pct_item)
 
-        # --- Kolumna CSV ---
         report_file = details.get("csv_path", folder if folder else "Brak")
         self.table_results.setItem(idx, 4, QTableWidgetItem(str(report_file)))
-
         self.append_log(f"   ➔ Plik zakończony. Znaleziono {count} watermarków.")
         self.table_results.resizeRowsToContents()
 
