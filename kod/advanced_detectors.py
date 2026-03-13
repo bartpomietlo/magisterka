@@ -35,25 +35,15 @@ def build_temporal_median(
     """
     Oblicza mediane po osi czasu dla listy klatek BGR.
     Ruchome obiekty 'znikaja', statyczny znak wodny pozostaje ostry.
-
-    Args:
-        frames: lista klatek np.ndarray (BGR uint8, takie same rozmiary)
-        max_frames: uzyj co najwyzej tylu klatek (rowno rozniesione)
-
-    Returns:
-        Obraz mediany (uint8 BGR)
     """
     if not frames:
         raise ValueError("Pusta lista klatek")
 
-    # Probkuj rowno jesli za duzo klatek
     if len(frames) > max_frames:
         step = len(frames) // max_frames
         frames = frames[::step][:max_frames]
 
-    # Konwertuj do float32 i ukladaj w tensor (T, H, W, C)
     stack = np.stack([f.astype(np.float32) for f in frames], axis=0)
-    # np.median po osi 0 jest wolny dla duzych tensorow – uzywamy partial sort
     median_frame = np.median(stack, axis=0).astype(np.uint8)
     return median_frame
 
@@ -64,16 +54,8 @@ def extract_static_overlay(
     amp: float = 4.0
 ) -> np.ndarray:
     """
-    Odejmuje "gładkie tło" (mediane) od pojedynczej klatki referencyjnej,
-    wzmacnia roznice – to co zostaje to statyczny overlay (znak wodny).
-
-    Args:
-        median_frame  : wynik build_temporal_median()
-        reference_frame: dowolna klatka z tego samego wideo
-        amp           : wspolczynnik wzmocnienia roznicy (domyslnie 4x)
-
-    Returns:
-        Obraz diff (uint8 BGR) z wyeksponowanym statycznym overlayem
+    Odejmuje medianę od klatki referencyjnej i wzmacnia różnice.
+    Efekt: statyczny overlay (znak wodny) staje się widoczny.
     """
     diff = cv2.absdiff(reference_frame.astype(np.float32),
                        median_frame.astype(np.float32))
@@ -88,17 +70,8 @@ def detect_zero_variance_rois(
     min_fraction: float = 0.30
 ) -> List[Dict[str, Any]]:
     """
-    Szuka regionow w kadrze (glownie narozniki), gdzie wariancja pikselowa
-    w czasie jest bliska 0 – silna heurystyka statycznego nałozonego elementu.
-
-    Args:
-        frames            : lista klatek BGR
-        corner_ratio      : jaka czesc krawedzi kadru analizowac (domyslnie 20%)
-        variance_threshold: prog wariancji – ponizej = "statyczny"
-        min_fraction      : jaki procent pikseli w ROI musi byc ponizej progu
-
-    Returns:
-        Lista slownikow {name, bbox, score, variance_map}
+    Szuka narożników kadru z warianacją pixelow bliskiej 0 –
+    silna heurystyka nalożonego statycznego elementu.
     """
     if len(frames) < 5:
         return []
@@ -114,12 +87,11 @@ def detect_zero_variance_rois(
         ("CORNER-BR", (w - cw, h - ch, w,      h)),
     ]
 
-    # Tensor szarych klatek: (T, H, W)
     gray_stack = np.stack(
         [cv2.cvtColor(f, cv2.COLOR_BGR2GRAY).astype(np.float32) for f in frames],
         axis=0
     )
-    variance_map = np.var(gray_stack, axis=0)  # (H, W)
+    variance_map = np.var(gray_stack, axis=0)
 
     results = []
     for name, (x1, y1, x2, y2) in corners:
@@ -141,15 +113,12 @@ def detect_zero_variance_rois(
 # 2. INVISIBLE WATERMARK (imwatermark / DWT / RivaGAN)
 # ---------------------------------------------------------------------------
 
-# Znane sygnatury binarne roznych systemow
 _KNOWN_SIGNATURES: Dict[str, str] = {
-    # Stable Diffusion / Stability AI (invisible-watermark default 48-bit)
     "STABILITY_AI": "110100110100101000001111111011010101010001000111",
-    # Przykladowe – rozszerz wg potrzeb
     "RUNWAY_WATERMARK": "101010101010101010101010",
 }
 
-_INVISIBLE_WM_AVAILABLE = None  # None = nie sprawdzono, True/False po pierwszym wywolaniu
+_INVISIBLE_WM_AVAILABLE = None
 
 
 def _check_imwatermark() -> bool:
@@ -161,9 +130,28 @@ def _check_imwatermark() -> bool:
         _INVISIBLE_WM_AVAILABLE = True
     except ImportError:
         _INVISIBLE_WM_AVAILABLE = False
-        print("[INVIS-WM] imwatermark niedostepny. Zainstaluj: pip install invisible-watermark",
+        print("[INVIS-WM] imwatermark niedostepny. pip install invisible-watermark",
               file=sys.stderr)
     return _INVISIBLE_WM_AVAILABLE
+
+
+def _torch_available() -> bool:
+    """
+    Sprawdza czy torch jest zaimportowany BEZ faktycznego importowania go teraz.
+    Unika bledu DLL przy starcie na maszynach bez CUDA / z uszkodzonym torch.
+    Jesli torch byl juz zaladowany wczesniej przez inny modul - uzywa go.
+    Jesli nie - proba cichego importu w try/except.
+    """
+    # Jesli torch zostal zaladowany wczesniej przez inny modul
+    if 'torch' in sys.modules:
+        return True
+    # Proba cichego importu - ignorujemy blad DLL i inne
+    try:
+        import importlib
+        importlib.import_module('torch')
+        return True
+    except Exception:
+        return False
 
 
 def detect_invisible_watermark(
@@ -173,20 +161,6 @@ def detect_invisible_watermark(
 ) -> Dict[str, Any]:
     """
     Proba zdekodowania ukrytego znaku wodnego z pojedynczej klatki.
-
-    Args:
-        frame_bgr       : klatka BGR uint8
-        methods         : lista metod do sprawdzenia: ["dwtDct", "dwtDctSvd", "rivaGan"]
-                          domyslnie sprawdzamy wszystkie
-        watermark_length: dlugosc bitu klucza do dekodowania (domyslnie 48)
-
-    Returns:
-        slownik:
-          found   : bool
-          method  : str
-          bits    : str  (zdekodowany ciag bitow)
-          matched : str | None  (nazwa pasujacego systemu lub None)
-          score   : float
     """
     result = {"found": False, "method": "invisible_watermark",
               "bits": "", "matched": None, "score": 0.0, "details": ""}
@@ -196,12 +170,11 @@ def detect_invisible_watermark(
         return result
 
     if methods is None:
+        # POPRAWKA: sprawdzamy torch przez _torch_available() zamiast bezposrednio
+        # importowac - unikamy bledu WinError 1114 przy ladowaniu DLL
         methods = ["dwtDct", "dwtDctSvd"]
-        try:
-            import torch  # type: ignore  # noqa
+        if _torch_available():
             methods.append("rivaGan")
-        except ImportError:
-            pass
 
     try:
         from imwatermark import WatermarkDecoder  # type: ignore
@@ -209,11 +182,7 @@ def detect_invisible_watermark(
         result["details"] = "import error"
         return result
 
-    bgr = frame_bgr
-    if bgr.shape[2] == 3:
-        pass  # OK
-    else:
-        bgr = bgr[:, :, :3]
+    bgr = frame_bgr[:, :, :3] if frame_bgr.ndim == 3 and frame_bgr.shape[2] != 3 else frame_bgr
 
     for method in methods:
         try:
@@ -221,12 +190,10 @@ def detect_invisible_watermark(
             watermark_bits = decoder.decode(bgr, method)
             bits_str = ''.join(str(int(b)) for b in watermark_bits)
 
-            # Sprawdz czy pasuje do znanych sygnatur
             matched = None
             best_similarity = 0.0
             for sig_name, sig_bits in _KNOWN_SIGNATURES.items():
                 if len(sig_bits) <= len(bits_str):
-                    # Hamming similarity na pierwszych len(sig_bits) bitach
                     sub = bits_str[:len(sig_bits)]
                     matches = sum(a == b for a, b in zip(sub, sig_bits))
                     sim = matches / len(sig_bits)
@@ -235,11 +202,9 @@ def detect_invisible_watermark(
                         if sim >= 0.85:
                             matched = sig_name
 
-            # Heurystyka: nierandomowy ciag bitow = nie jest czystym szumem
             ones_ratio = bits_str.count('1') / max(len(bits_str), 1)
             is_nontrivial = 0.15 < ones_ratio < 0.85
 
-            # Wykryj dlugie serie (artifact szumu vs struktura)
             max_run = max(
                 (sum(1 for _ in g) for _, g in
                  __import__('itertools').groupby(bits_str)),
@@ -276,52 +241,50 @@ def detect_ai_noise_artifacts(
     wiener_ksize: int = 5
 ) -> Dict[str, Any]:
     """
-    Wykrywa periodyczne artefakty upsamplingu charakterystyczne dla modeli AI
-    poprzez:
-    a) ekstrakcje szumu resztkowego (residual po filtrze Wienera),
-    b) FFT na szumie – szuka ostrych pik poza centrum.
+    Wykrywa periodyczne artefakty upsamplingu przez FFT na residual noise.
 
-    Args:
-        frame_bgr          : klatka BGR uint8
-        fft_peak_threshold : stosunek max_peak / mean_background w FFT
-        wiener_ksize       : rozmiar kernela filtru Wienera
-
-    Returns:
-        slownik {found, score, details, fft_image}
+    POPRAWKA: cv2.circle wymaga macierzy uint8 (C-contiguous) jako pierwszego
+    argumentu. Wczesniej magnitude_no_center bylo float64 z np.fft, co
+    powodowalo blad 'Layout incompatible with cv::Mat'. Teraz robimy kopie
+    uint8 do wizualizacji, a maska float jest obliczana na float64.
     """
     result = {"found": False, "method": "noise_residual_fft",
               "score": 0.0, "details": "", "fft_image": None}
 
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-    # Filtr Wienera (aproksymacja przez Gaussian)
     blurred = cv2.GaussianBlur(gray, (wiener_ksize, wiener_ksize), 0)
-    noise = gray - blurred  # residual szumu
+    noise = gray - blurred
 
-    # FFT na szumie
     fft = np.fft.fft2(noise)
     fft_shifted = np.fft.fftshift(fft)
-    magnitude = np.log1p(np.abs(fft_shifted))
+    magnitude = np.log1p(np.abs(fft_shifted))   # float64, niemutowalne przez FFT
 
-    # Zamaskuj centrum (niskoczestotliwosci, zawsze silne)
     h, w = magnitude.shape
     cy, cx = h // 2, w // 2
-    mask = np.ones_like(magnitude)
-    r = min(h, w) // 8  # promien maski centrum
-    cv2.circle(mask, (cx, cy), r, 0, -1)
+    r = min(h, w) // 8
+
+    # POPRAWKA: maska jako osobna tablica float64 (nie rysujemy po magnitude)
+    mask = np.ones((h, w), dtype=np.float64)
+    # cv2.circle wymaga uint8 lub float32 C-contiguous - uzyj osobnej maski uint8
+    mask_u8 = np.ones((h, w), dtype=np.uint8)
+    cv2.circle(mask_u8, (cx, cy), r, 0, -1)     # rysuj po uint8, nie po float
+    mask = mask_u8.astype(np.float64)            # z powrotem float do mnozenia
+
     magnitude_no_center = magnitude * mask
 
-    # Czy sa ostre piki poza centrum?
-    mean_bg = float(np.mean(magnitude_no_center[magnitude_no_center > 0]))
+    nonzero = magnitude_no_center[magnitude_no_center > 0]
+    mean_bg = float(np.mean(nonzero)) if nonzero.size > 0 else 1e-6
     max_peak = float(np.max(magnitude_no_center))
     ratio = max_peak / (mean_bg + 1e-6)
 
-    # Normalizuj do uint8 dla podgladu
-    vis = cv2.normalize(magnitude_no_center, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    vis = cv2.normalize(
+        magnitude_no_center.astype(np.float32), None, 0, 255, cv2.NORM_MINMAX
+    ).astype(np.uint8)
     vis_color = cv2.applyColorMap(vis, cv2.COLORMAP_INFERNO)
     result["fft_image"] = vis_color
 
-    if ratio > fft_peak_threshold * 10:  # skalujemy prog bo log1p zmienia skale
+    if ratio > fft_peak_threshold * 10:
         result["found"] = True
         result["score"] = min(1.0, (ratio - fft_peak_threshold * 10) / 50.0)
         result["details"] = (
@@ -349,24 +312,6 @@ def run_advanced_scan(
 ) -> Dict[str, Any]:
     """
     Zbiera klatki z otwartego VideoCapture i uruchamia wszystkie zaawansowane metody.
-
-    Args:
-        cap              : otwarty cv2.VideoCapture
-        fps              : FPS wideo
-        total_frames     : liczba klatek
-        n_frames_median  : ile klatek pobrac do mediany
-        check_invisible  : czy sprawdzac invisible watermark
-        check_fft        : czy sprawdzac FFT noise artifacts
-        log_fn           : opcjonalna funkcja logowania (str) -> None
-
-    Returns:
-        slownik z kluczami:
-          temporal_median_frame : np.ndarray (uint8 BGR) | None
-          overlay_diff          : np.ndarray (uint8 BGR) | None
-          zero_variance_rois    : list
-          invisible_wm          : dict
-          fft_artifacts         : dict
-          summary               : str
     """
     def _log(msg):
         print(msg, file=sys.stderr)
@@ -385,7 +330,6 @@ def run_advanced_scan(
         "summary": ""
     }
 
-    # Zbierz klatki rowno rozniesione w czasie
     _log("[ADV] Pobieram klatki do analizy temporalnej...")
     step = max(1, total_frames // n_frames_median)
     frames: List[np.ndarray] = []
@@ -407,7 +351,6 @@ def run_advanced_scan(
     try:
         median_frame = build_temporal_median(frames)
         result["temporal_median_frame"] = median_frame
-        # Diff na srodkowej klatce
         mid = frames[len(frames) // 2]
         result["overlay_diff"] = extract_static_overlay(median_frame, mid, amp=5.0)
         _log("[ADV] Mediana temporalna obliczona.")
@@ -424,7 +367,7 @@ def run_advanced_scan(
     except Exception as e:
         _log(f"[ADV] Blad zero-variance: {e}")
 
-    # 3. Invisible watermark – sprawdz na medianie (najczystszy sygnal)
+    # 3. Invisible watermark
     if check_invisible and result["temporal_median_frame"] is not None:
         _log("[ADV] Sprawdzam invisible watermark (imwatermark)...")
         try:
@@ -437,7 +380,7 @@ def run_advanced_scan(
         except Exception as e:
             _log(f"[ADV] Blad invisible WM: {e}")
 
-    # 4. FFT noise – sprawdz na jednej srodkowej klatce
+    # 4. FFT noise
     if check_fft:
         _log("[ADV] Sprawdzam artefakty FFT noise...")
         try:
