@@ -335,18 +335,20 @@ def _fill_zoom_label(crop_bgr: np.ndarray, label_w: int, label_h: int) -> QPixma
 
 class AspectRatioWidget(QWidget):
     """
-    Widget opakowujacy label podgladu tak, zeby zawsze zachowywal proporcje 16:9.
-    Resizuje wewnetrzny label do max mozliwego rozmiaru 16:9 wewnatrz dostepnego miejsca.
+    Kontener zachowujacy proporcje 16:9 dla wewnetrznego labela.
+
+    KLUCZOWE: inner NIE jest dodawany do zadnego layoutu — jest bezposrednim
+    dzieckiem tego widgetu i pozycjonowany przez setGeometry w resizeEvent.
+    Dzieki temu label rzeczywiscie wypelnia caly dostepny obszar 16:9
+    zamiast kurczyc sie do minimalnego rozmiaru narzuconego przez layout.
     """
     def __init__(self, inner: QLabel, aspect_w: int = 16, aspect_h: int = 9, parent=None):
         super().__init__(parent)
         self._inner = inner
         self._aw = aspect_w
         self._ah = aspect_h
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(inner)
+        # inner jest dzieckiem tego widgetu, ale BEZ layoutu
+        inner.setParent(self)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Expanding
@@ -356,13 +358,13 @@ class AspectRatioWidget(QWidget):
         super().resizeEvent(event)
         avail_w = self.width()
         avail_h = self.height()
-        # Max rozmiar zachowujacy 16:9
+        # Oblicz max rozmiar zachowujacy proporcje aspect_w:aspect_h
         target_w = avail_w
         target_h = avail_w * self._ah // self._aw
         if target_h > avail_h:
             target_h = avail_h
             target_w = avail_h * self._aw // self._ah
-        # Wycentruj
+        # Wycentruj w dostepnym obszarze
         off_x = (avail_w - target_w) // 2
         off_y = (avail_h - target_h) // 2
         self._inner.setGeometry(off_x, off_y, target_w, target_h)
@@ -381,7 +383,6 @@ class WatermarkWorker(QtCore.QThread):
 
     def __init__(self, files, confidence, sample_rate, output_dir, detailed_scan, parent=None):
         super().__init__(parent)
-        # Kopia listy plikow w momencie startu – bezpieczna przed modyfikacja przez GUI
         self._files         = list(files)
         self._confidence    = confidence
         self._sample_rate   = max(1, int(sample_rate)) if sample_rate else 1
@@ -411,7 +412,6 @@ class WatermarkWorker(QtCore.QThread):
         if self._output_dir:
             setattr(config, "REPORTS_BASE_DIR", self._output_dir)
 
-        # Oblicz frame counts dla zamrozonej kopii listy
         all_frame_counts = [_get_frame_count(p) for p in self._files]
         frame_times: list[float] = []
 
@@ -685,7 +685,8 @@ class MainWindow(QMainWindow):
         self.lbl_preview = QLabel("Brak podglądu")
         self.lbl_preview.setObjectName("preview_label")
         self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Opakowanie 16:9
+        # AspectRatioWidget NIE dodaje lbl_preview do layoutu wewnetrznie
+        # — pozycjonuje go przez setGeometry. Wiec tutaj dodajemy tylko kontener.
         self._preview_ar = AspectRatioWidget(self.lbl_preview, 16, 9)
         preview_lay.addWidget(self._preview_ar, 1)
         right_panel.addWidget(preview_container)
@@ -849,6 +850,7 @@ class MainWindow(QMainWindow):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         qt_img = QImage(frame_rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qt_img)
+        # Skaluj do aktualnego rozmiaru labela (ktory teraz wypelnia caly 16:9 kontener)
         self.lbl_preview.setPixmap(
             pixmap.scaled(
                 self.lbl_preview.size(),
@@ -919,7 +921,7 @@ class MainWindow(QMainWindow):
         self.lbl_zoom.setText("Analiza w toku...")
 
         self.worker = WatermarkWorker(
-            self.files,       # Worker robi list(files) wewnatrz – bezpieczna kopia
+            self.files,
             self.spin_conf.value(),
             self.spin_sample.value(),
             self.txt_output_dir.text().strip(),
