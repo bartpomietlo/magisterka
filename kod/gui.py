@@ -274,43 +274,29 @@ def _safe_crop_for_zoom(
 ) -> np.ndarray:
     """
     Wycina fragment klatki wokol bbox z paddingiem.
-    Gwarantuje ze:
-      - caly bbox (z ramka) jest widoczny
-      - kadr nie wychodzi poza obraz
-      - crop ma minimalne wymiary zapobiegajace bialym/czarnym paskam
-    Zwraca wyciety fragment bez letterboxingu.
+    Przesuwa kadr gdy bbox jest przy krawedzi, zeby cala ramka byla widoczna.
     """
     h, w = frame_bgr.shape[:2]
 
-    # Bbox moze wychodzic poza obraz (np. znak przy samej krawedzi) – najpierw go przytnij
     bx1 = max(0, x1)
     by1 = max(0, y1)
     bx2 = min(w - 1, x2)
     by2 = min(h - 1, y2)
 
-    # Dodaj padding i sprawdz czy nie wychodzi poza kadr
     cx1 = max(0, bx1 - padding)
     cy1 = max(0, by1 - padding)
     cx2 = min(w, bx2 + padding)
     cy2 = min(h, by2 + padding)
 
-    # Jesli bbox jest przy krawedzi, przesuniemy kadr w przeciwna strone
-    # tak zeby bbox byl w pelni widoczny z paddingiem
-    crop_w = cx2 - cx1
-    crop_h = cy2 - cy1
-
-    # Jesli bbox jest blisko prawej/dolnej krawedzi i brakuje miejsca na padding –
-    # przesuniemy lewy/gorny bok w lewo/gore (o ile to mozliwe)
     if bx2 + padding > w and cx1 > 0:
         shift = min(cx1, (bx2 + padding) - w)
         cx1 -= shift
-        cx2 = min(w, cx2)  # cx2 i tak jest == w
+        cx2 = min(w, cx2)
     if by2 + padding > h and cy1 > 0:
         shift = min(cy1, (by2 + padding) - h)
         cy1 -= shift
         cy2 = min(h, cy2)
 
-    # Analogicznie dla lewej/gornej krawedzi
     if bx1 - padding < 0 and cx2 < w:
         shift = min(w - cx2, padding - bx1)
         cx2 += shift
@@ -321,56 +307,40 @@ def _safe_crop_for_zoom(
     cx1, cy1, cx2, cy2 = max(0, cx1), max(0, cy1), min(w, cx2), min(h, cy2)
 
     if cx2 <= cx1 or cy2 <= cy1:
-        return frame_bgr  # fallback: zwroc cala klatke
+        return frame_bgr
 
     return frame_bgr[cy1:cy2, cx1:cx2]
 
 
-def _fit_crop_to_label(
-    crop_bgr: np.ndarray,
-    label_w: int,
-    label_h: int
-) -> QPixmap:
+def _fill_zoom_label(crop_bgr: np.ndarray, label_w: int, label_h: int) -> QPixmap:
     """
-    Skaluje crop do rozmiaru labela BEZ czarnych pasków:
-    - liczy docelowe wymiary zachowujac aspect ratio
-    - zwraca QPixmap o rozmiarze dokladnie (label_w x label_h)
-      z obrazem wycentrowanym i tlem dopasowanym do koloru krawedzi cropa
-      (zamiast czerni)
-    Dzieki temu widget zawsze jest wypelniony.
+    Skaluje crop tak, zeby WYPELNIL caly widget (KeepAspectRatioByExpanding):
+    - skaluje do rozmiaru, w ktorym obraz pokrywa caly label (zadnych paskow)
+    - nadmiar jest przycinany od centrum (center crop)
+    - wynik ma dokladnie (label_w x label_h) pikseli
     """
     ch, cw = crop_bgr.shape[:2]
     if cw == 0 or ch == 0 or label_w == 0 or label_h == 0:
         return QPixmap()
 
-    # Oblicz skale zachowujac aspect ratio (KeepAspectRatio)
-    scale = min(label_w / cw, label_h / ch)
+    # Skala ExpandByExpanding: wybierz wieksza ze skal tak, zeby obraz pokryl caly label
+    scale = max(label_w / cw, label_h / ch)
     new_w = int(cw * scale)
     new_h = int(ch * scale)
 
     resized = cv2.resize(crop_bgr, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
 
-    # Stwórz tlo wypelnione srednim kolorem krawedzi cropa (zamiast czarnego)
-    # Uzywamy rozmytej wersji jako tla – efekt "rozlania" obrazu bez czarnych pasow
-    border_color = np.median(
-        np.concatenate([
-            crop_bgr[0, :],          # gorna krawedz
-            crop_bgr[-1, :],         # dolna krawedz
-            crop_bgr[:, 0],          # lewa krawedz
-            crop_bgr[:, -1],         # prawa krawedz
-        ], axis=0),
-        axis=0
-    ).astype(np.uint8)
+    # Center crop do dokladnie (label_w x label_h)
+    off_x = (new_w - label_w) // 2
+    off_y = (new_h - label_h) // 2
+    cropped = resized[off_y:off_y + label_h, off_x:off_x + label_w]
 
-    canvas = np.full((label_h, label_w, 3), border_color, dtype=np.uint8)
+    # Upewnij sie ze wymiary sa dokladnie takie jak label (moze byc 1px roznica przy zaokraglaniu)
+    if cropped.shape[0] != label_h or cropped.shape[1] != label_w:
+        cropped = cv2.resize(cropped, (label_w, label_h), interpolation=cv2.INTER_LINEAR)
 
-    # Wklejenie wycentrowane
-    off_x = (label_w - new_w) // 2
-    off_y = (label_h - new_h) // 2
-    canvas[off_y:off_y + new_h, off_x:off_x + new_w] = resized
-
-    canvas_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-    qt_img = QImage(canvas_rgb.data, label_w, label_h, 3 * label_w, QImage.Format.Format_RGB888)
+    cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    qt_img = QImage(cropped_rgb.data, label_w, label_h, 3 * label_w, QImage.Format.Format_RGB888)
     return QPixmap.fromImage(qt_img)
 
 
@@ -697,9 +667,9 @@ class MainWindow(QMainWindow):
         zoom_container = QWidget()
         zoom_lay = QVBoxLayout(zoom_container)
         zoom_lay.setContentsMargins(0, 10, 0, 0)
-        lbl_zoom = QLabel("<b>Przybliżenie detekcji (Zoom):</b>")
-        lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        zoom_lay.addWidget(lbl_zoom)
+        lbl_zoom_title = QLabel("<b>Przybliżenie detekcji (Zoom):</b>")
+        lbl_zoom_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        zoom_lay.addWidget(lbl_zoom_title)
         self.lbl_zoom = QLabel("Brak detekcji")
         self.lbl_zoom.setObjectName("zoom_label")
         self.lbl_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -864,14 +834,13 @@ class MainWindow(QMainWindow):
             det = detections[0]
             x1, y1, x2, y2 = det.get("bbox", (0, 0, 10, 10))
 
-            # Wycinek z bezpiecznym paddingiem i przesuniecia gdy sign watermark jest przy krawedzi
             crop = _safe_crop_for_zoom(frame_bgr, x1, y1, x2, y2, padding=40)
 
             if crop.size > 0:
                 lw = max(1, self.lbl_zoom.width())
                 lh = max(1, self.lbl_zoom.height())
-                # Skalowanie bez czarnych pasków – tło dopasowane do koloru krawędzi
-                zoom_pixmap = _fit_crop_to_label(crop, lw, lh)
+                # Wypelnienie calego widgetu bez paskow
+                zoom_pixmap = _fill_zoom_label(crop, lw, lh)
                 if not zoom_pixmap.isNull():
                     self.lbl_zoom.setPixmap(zoom_pixmap)
         else:
