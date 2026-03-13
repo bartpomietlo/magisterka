@@ -35,6 +35,11 @@ _OCR_LOCK = threading.Lock()
 CORNER_RATIO = 0.15
 CORNER_SCALE = 5.0
 
+_LABEL_FONT       = cv2.FONT_HERSHEY_SIMPLEX
+_LABEL_SCALE      = 0.65
+_LABEL_THICKNESS  = 2
+_LABEL_PAD        = 4   # px padding wokol tekstu
+
 
 class TextTracker:
     def __init__(self):
@@ -62,6 +67,66 @@ class TextTracker:
 
         self.history[type_id].append({"frame": frame_idx, "centroid": (cx, cy), "bbox": bbox})
         return status
+
+
+def _draw_label(img: np.ndarray, text: str, anchor_x: int, anchor_y: int,
+                color=(0, 255, 0), used_rects: list = None) -> tuple:
+    """
+    Rysuje etykiete z czarnym tlem tak, zeby:
+    - nie wychodzila poza krawedz obrazu,
+    - nie nachodzia na poprzednie etykiety (used_rects).
+    Zwraca (tx, ty) - lewy dolny naroznik tekstu (do rejestracji w used_rects).
+    """
+    h_img, w_img = img.shape[:2]
+    (tw, th), baseline = cv2.getTextSize(text, _LABEL_FONT, _LABEL_SCALE, _LABEL_THICKNESS)
+    box_h = th + baseline + 2 * _LABEL_PAD
+    box_w = tw + 2 * _LABEL_PAD
+
+    # Preferowana pozycja: nad gorna krawedzia bboxa
+    tx = anchor_x
+    ty = anchor_y - _LABEL_PAD  # dolny baseline tekstu
+
+    # Przesuniecia jesli wychodzimy poza kadr
+    if tx + box_w > w_img:
+        tx = max(0, w_img - box_w)
+    if tx < 0:
+        tx = 0
+    if ty - th - _LABEL_PAD < 0:
+        # Nie ma miejsca nad bboxem - wstaw wewnatrz, ponizej gornej krawedzi
+        ty = anchor_y + th + _LABEL_PAD + box_h
+    if ty > h_img:
+        ty = h_img - _LABEL_PAD
+
+    # Unikaj nakladania na poprzednie etykiety - przesun w dol
+    if used_rects is not None:
+        for _ in range(30):  # max 30 prob przesuniec
+            rect = (tx, ty - th - _LABEL_PAD, tx + box_w, ty + baseline + _LABEL_PAD)
+            overlap = any(
+                not (rect[2] < r[0] or rect[0] > r[2] or rect[3] < r[1] or rect[1] > r[3])
+                for r in used_rects
+            )
+            if not overlap:
+                break
+            ty += box_h + 2
+            if ty > h_img:
+                ty = h_img - _LABEL_PAD
+                break
+
+    # Tlo
+    bx1 = tx
+    by1 = ty - th - _LABEL_PAD
+    bx2 = tx + box_w
+    by2 = ty + baseline + _LABEL_PAD
+    by1 = max(0, by1)
+    bx2 = min(w_img, bx2)
+    by2 = min(h_img, by2)
+    cv2.rectangle(img, (bx1, by1), (bx2, by2), (0, 0, 0), cv2.FILLED)
+    cv2.putText(img, text, (tx + _LABEL_PAD, ty), _LABEL_FONT,
+                _LABEL_SCALE, color, _LABEL_THICKNESS, cv2.LINE_AA)
+
+    if used_rects is not None:
+        used_rects.append((bx1, by1, bx2, by2))
+    return tx, ty
 
 
 def reset_reader():
@@ -329,31 +394,25 @@ def _corner_versions(roi_upscaled: np.ndarray) -> List[np.ndarray]:
 
 def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> List[Tuple]:
     """
-    Uruchamia OCR na obrazie i zwraca listę (bbox, text, prob, keyword).
-    Obsługuje: RapidOCR, PaddleOCR, EasyOCR.
+    Uruchamia OCR na obrazie i zwraca liste (bbox, text, prob, keyword).
+    Obsluguje: RapidOCR, PaddleOCR, EasyOCR.
     """
     reader = _get_reader()
     if reader is None:
         return []
 
-    # Normalizuj obraz do uint8 BGR
     if image.dtype != np.uint8:
         image = np.clip(image, 0, 255).astype(np.uint8)
 
     raw_results = []
     try:
         if _OCR_ENGINE_TYPE == "rapid":
-            # RapidOCR zwraca (results, elapse) lub (None, elapse)
-            # results: lista [[bbox_points, text, confidence], ...]
-            # bbox_points: [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
             result, _ = reader(image)
             if result:
                 for item in result:
-                    # item: [bbox, text, score]
-                    bbox_pts = item[0]   # 4 punkty
+                    bbox_pts = item[0]
                     text = item[1]
                     score = float(item[2]) if item[2] is not None else 0.0
-                    # Normalizuj bbox do formatu EasyOCR: [[tl],[tr],[br],[bl]]
                     raw_results.append((bbox_pts, text, score))
 
         elif _OCR_ENGINE_TYPE == "paddle":
@@ -375,7 +434,6 @@ def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> 
         t_clean = str(text).upper().replace(" ", "")
         for k in keywords:
             if k.replace(" ", "") in t_clean:
-                # Normalizuj bbox do [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
                 bbox_norm = _normalize_bbox(bbox)
                 matches.append((bbox_norm, text, float(prob), k))
                 break
@@ -383,14 +441,9 @@ def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> 
 
 
 def _normalize_bbox(bbox) -> list:
-    """
-    Normalizuje bbox do formatu [[x1,y1],[x2,y1],[x2,y2],[x1,y2]].
-    Obsługuje różne formaty zwracane przez silniki OCR.
-    """
     try:
         pts = list(bbox)
         if len(pts) == 4:
-            # Już w formacie 4-punktowym - upewnij się że każdy punkt to lista/tuple [x,y]
             result = []
             for p in pts:
                 if hasattr(p, '__len__') and len(p) >= 2:
@@ -398,7 +451,6 @@ def _normalize_bbox(bbox) -> list:
                 else:
                     result.append([float(p), 0.0])
             return result
-        # Fallback - zwróć jako prostokąt
         return [[0, 0], [10, 0], [10, 10], [0, 10]]
     except Exception:
         return [[0, 0], [10, 0], [10, 10], [0, 10]]
@@ -461,6 +513,26 @@ def _perform_scan(
                 found_keys.add(kw)
 
     return frame_detections
+
+
+def _annotate_frame(frame: np.ndarray, detections: List[dict], tracker: 'TextTracker',
+                    frame_idx: int, aggr: bool = False) -> None:
+    """
+    Rysuje bbox i etykiety detekcji na frame (in-place).
+    Etykiety nie wychodzą poza krawedz i nie nachodza na siebie.
+    """
+    used_rects: List[Tuple] = []
+    for det in detections:
+        x1, y1, x2, y2 = det["bbox"]
+        motion = tracker.update(frame_idx, det['type'], det['bbox'])
+        conf_pct = int(det['confidence'] * 100)
+        if aggr:
+            label = f"{det['type']} [AGGR:{motion}] {conf_pct}%"
+        else:
+            label = f"{det['type']} [{motion}] {conf_pct}%"
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
+        _draw_label(frame, label, anchor_x=x1, anchor_y=y1, color=(0, 255, 0),
+                    used_rects=used_rects)
 
 
 def scan_for_watermarks(
@@ -553,21 +625,18 @@ def scan_for_watermarks(
                 missed_frames.append(frame_idx)
 
             frame_to_draw = frame.copy()
+            _annotate_frame(frame_to_draw, frame_detections, tracker, frame_idx, aggr=False)
+
             for det in frame_detections:
-                x1, y1, x2, y2 = det["bbox"]
-                motion = tracker.update(frame_idx, det['type'], det['bbox'])
-                cv2.rectangle(frame_to_draw, (x1, y1), (x2, y2), (0, 255, 0), 3)
-                cv2.putText(frame_to_draw,
-                            f"{det['type']} [{motion}] ({int(det['confidence']*100)}%)",
-                            (x1, max(0, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 found_types.add(det['type'])
                 detections_count += 1
                 fname = f"frame_{frame_idx}_t_{now_sec:.2f}s.jpg"
                 save_path = os.path.join(out_dir, fname)
+                motion = tracker.history.get(det['type'], [{}])[-1]
                 writer.writerow([
                     os.path.basename(media_path), "Video" if is_video else "Image",
                     frame_idx, f"{now_sec:.2f}", det['type'],
-                    f"{det['confidence']:.2f}", det['text'], motion, det.get('source', ''), save_path
+                    f"{det['confidence']:.2f}", det['text'], "", det.get('source', ''), save_path
                 ])
                 try:
                     cv2.imwrite(save_path, frame_to_draw)
@@ -605,19 +674,15 @@ def scan_for_watermarks(
 
                 if frame_detections:
                     frame_to_draw = frame.copy()
+                    _annotate_frame(frame_to_draw, frame_detections, tracker, m_idx, aggr=True)
+
                     for det in frame_detections:
-                        x1, y1, x2, y2 = det["bbox"]
-                        motion = tracker.update(m_idx, det['type'], det['bbox'])
-                        cv2.rectangle(frame_to_draw, (x1, y1), (x2, y2), (0, 255, 0), 3)
-                        cv2.putText(frame_to_draw,
-                                    f"{det['type']} [AGGR:{motion}]",
-                                    (x1, max(0, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                         found_types.add(det['type'])
                         detections_count += 1
                         writer.writerow([
                             os.path.basename(media_path), "Video (Aggr)" if is_video else "Image (Aggr)",
                             m_idx, f"{now_sec:.2f}", det['type'],
-                            f"{det['confidence']:.2f}", det['text'], motion, det.get('source', ''), ""
+                            f"{det['confidence']:.2f}", det['text'], "", det.get('source', ''), ""
                         ])
 
                     save_path = os.path.join(out_dir, f"frame_{m_idx}_aggr_t_{now_sec:.2f}s.jpg")
