@@ -38,7 +38,7 @@ CORNER_SCALE = 5.0
 _LABEL_FONT       = cv2.FONT_HERSHEY_SIMPLEX
 _LABEL_SCALE      = 0.65
 _LABEL_THICKNESS  = 2
-_LABEL_PAD        = 4   # px padding wokol tekstu
+_LABEL_PAD        = 4
 
 
 class TextTracker:
@@ -72,37 +72,34 @@ class TextTracker:
 def _draw_label(img: np.ndarray, text: str, anchor_x: int, anchor_y: int,
                 color=(0, 255, 0), used_rects: list = None) -> tuple:
     """
-    Rysuje etykiete z czarnym tlem tak, zeby:
-    - nie wychodzila poza krawedz obrazu,
-    - nie nachodzia na poprzednie etykiety (used_rects).
-    Zwraca (tx, ty) - lewy dolny naroznik tekstu (do rejestracji w used_rects).
+    Rysuje etykiete z czarnym tlem.
+    Gwarantuje ze:
+    - caly napis miesci sie w kadrze (poziomo i pionowo),
+    - nie nachodzi na wczesniej narysowane etykiety (used_rects).
     """
     h_img, w_img = img.shape[:2]
     (tw, th), baseline = cv2.getTextSize(text, _LABEL_FONT, _LABEL_SCALE, _LABEL_THICKNESS)
-    box_h = th + baseline + 2 * _LABEL_PAD
     box_w = tw + 2 * _LABEL_PAD
+    box_h = th + baseline + 2 * _LABEL_PAD
 
-    # Preferowana pozycja: nad gorna krawedzia bboxa
-    tx = anchor_x
-    ty = anchor_y - _LABEL_PAD  # dolny baseline tekstu
+    # Ogranicz szerokosc tekstu jesli szerszy niz caly obraz
+    box_w = min(box_w, w_img)
 
-    # Przesuniecia jesli wychodzimy poza kadr
-    if tx + box_w > w_img:
-        tx = max(0, w_img - box_w)
-    if tx < 0:
-        tx = 0
+    # Pozycja X: zacznij od x1 bboxa, cofnij jesli wychodzimy za prawy brzeg
+    tx = max(0, min(anchor_x, w_img - box_w))
+
+    # Pozycja Y: preferuj nad bboxem, jesli nie ma miejsca - wstaw wewnatrz
+    ty = anchor_y - _LABEL_PAD
     if ty - th - _LABEL_PAD < 0:
-        # Nie ma miejsca nad bboxem - wstaw wewnatrz, ponizej gornej krawedzi
-        ty = anchor_y + th + _LABEL_PAD + box_h
-    if ty > h_img:
-        ty = h_img - _LABEL_PAD
+        ty = anchor_y + box_h
+    ty = max(box_h, min(ty, h_img - _LABEL_PAD))
 
-    # Unikaj nakladania na poprzednie etykiety - przesun w dol
+    # Collision avoidance - przesun w dol
     if used_rects is not None:
-        for _ in range(30):  # max 30 prob przesuniec
+        for _ in range(40):
             rect = (tx, ty - th - _LABEL_PAD, tx + box_w, ty + baseline + _LABEL_PAD)
             overlap = any(
-                not (rect[2] < r[0] or rect[0] > r[2] or rect[3] < r[1] or rect[1] > r[3])
+                not (rect[2] <= r[0] or rect[0] >= r[2] or rect[3] <= r[1] or rect[1] >= r[3])
                 for r in used_rects
             )
             if not overlap:
@@ -112,16 +109,13 @@ def _draw_label(img: np.ndarray, text: str, anchor_x: int, anchor_y: int,
                 ty = h_img - _LABEL_PAD
                 break
 
-    # Tlo
     bx1 = tx
-    by1 = ty - th - _LABEL_PAD
-    bx2 = tx + box_w
-    by2 = ty + baseline + _LABEL_PAD
-    by1 = max(0, by1)
-    bx2 = min(w_img, bx2)
-    by2 = min(h_img, by2)
+    by1 = max(0, ty - th - _LABEL_PAD)
+    bx2 = min(w_img, tx + box_w)
+    by2 = min(h_img, ty + baseline + _LABEL_PAD)
+
     cv2.rectangle(img, (bx1, by1), (bx2, by2), (0, 0, 0), cv2.FILLED)
-    cv2.putText(img, text, (tx + _LABEL_PAD, ty), _LABEL_FONT,
+    cv2.putText(img, text, (bx1 + _LABEL_PAD, ty), _LABEL_FONT,
                 _LABEL_SCALE, color, _LABEL_THICKNESS, cv2.LINE_AA)
 
     if used_rects is not None:
@@ -138,10 +132,6 @@ def reset_reader():
 
 
 def warmup_reader(log_fn=None):
-    """
-    Inicjalizuje OCR reader i zwraca (engine_name, error_or_None).
-    Kolejnosc prob: RapidOCR (onnxruntime, bez torch) > PaddleOCR > EasyOCR.
-    """
     global _OCR_READER, _OCR_ENGINE_TYPE, _OCR_INIT_ERROR
 
     def _log(msg):
@@ -159,7 +149,6 @@ def warmup_reader(log_fn=None):
 
         _OCR_INIT_ERROR = None
 
-        # 1. RapidOCR - onnxruntime, NIE wymaga torch, dziala na Python 3.13
         try:
             from rapidocr_onnxruntime import RapidOCR  # type: ignore
             _log("[OCR] Probuje RapidOCR (onnxruntime)...")
@@ -172,7 +161,6 @@ def warmup_reader(log_fn=None):
         except Exception as e:
             _log(f"[OCR] RapidOCR blad: {e}, probuje PaddleOCR...")
 
-        # 2. PaddleOCR
         try:
             from paddleocr import PaddleOCR  # type: ignore
             _log("[OCR] Probuje PaddleOCR...")
@@ -185,7 +173,6 @@ def warmup_reader(log_fn=None):
         except Exception as e:
             _log(f"[OCR] PaddleOCR blad: {e}, probuje EasyOCR...")
 
-        # 3. EasyOCR (wymaga torch - moze nie dzialac na Python 3.13 + Windows)
         try:
             import easyocr  # type: ignore
             _log("[OCR] Inicjalizuje EasyOCR (moze chwile potrwac)...")
@@ -393,10 +380,6 @@ def _corner_versions(roi_upscaled: np.ndarray) -> List[np.ndarray]:
 
 
 def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> List[Tuple]:
-    """
-    Uruchamia OCR na obrazie i zwraca liste (bbox, text, prob, keyword).
-    Obsluguje: RapidOCR, PaddleOCR, EasyOCR.
-    """
     reader = _get_reader()
     if reader is None:
         return []
@@ -414,16 +397,13 @@ def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> 
                     text = item[1]
                     score = float(item[2]) if item[2] is not None else 0.0
                     raw_results.append((bbox_pts, text, score))
-
         elif _OCR_ENGINE_TYPE == "paddle":
             raw = reader.ocr(image, cls=False)
             if raw and raw[0]:
                 for line in raw[0]:
                     raw_results.append((line[0], line[1][0], line[1][1]))
-
         else:  # easyocr
             raw_results = reader.readtext(image)
-
     except Exception:
         return []
 
@@ -464,6 +444,8 @@ def _perform_scan(
     scale_factor: float = 1.0
 ) -> List[dict]:
     frame_detections = []
+    # found_keys jest WSPOLNA dla calej funkcji - zapobiega duplikatom
+    # miedzy versions_to_scan i corner ROI
     found_keys: set = set()
 
     for (x1, y1, x2, y2, conf, label) in _detect_yolo_watermark(frame_original, confidence):
@@ -496,10 +478,10 @@ def _perform_scan(
     corner_confidence = max(0.25, confidence - 0.25)
 
     for (corner_name, roi_upscaled, ox, oy) in _extract_corner_rois(frame_original):
-        corner_found: set = set()
         for rv in _corner_versions(roi_upscaled):
             for (bbox, text, prob, kw) in _ocr_on_image(rv, corner_confidence, keywords):
-                if kw in corner_found:
+                # FIX: sprawdzamy globalny found_keys, nie lokalny corner_found
+                if kw in found_keys:
                     continue
                 x1 = ox + int(bbox[0][0] / CORNER_SCALE)
                 y1 = oy + int(bbox[0][1] / CORNER_SCALE)
@@ -509,7 +491,6 @@ def _perform_scan(
                 y1, y2 = max(0, y1), min(h_orig, y2)
                 frame_detections.append({"type": kw, "confidence": prob, "text": str(text).upper(),
                                           "bbox": (x1, y1, x2, y2), "source": corner_name})
-                corner_found.add(kw)
                 found_keys.add(kw)
 
     return frame_detections
@@ -517,22 +498,14 @@ def _perform_scan(
 
 def _annotate_frame(frame: np.ndarray, detections: List[dict], tracker: 'TextTracker',
                     frame_idx: int, aggr: bool = False) -> None:
-    """
-    Rysuje bbox i etykiety detekcji na frame (in-place).
-    Etykiety nie wychodzą poza krawedz i nie nachodza na siebie.
-    """
     used_rects: List[Tuple] = []
     for det in detections:
         x1, y1, x2, y2 = det["bbox"]
         motion = tracker.update(frame_idx, det['type'], det['bbox'])
         conf_pct = int(det['confidence'] * 100)
-        if aggr:
-            label = f"{det['type']} [AGGR:{motion}] {conf_pct}%"
-        else:
-            label = f"{det['type']} [{motion}] {conf_pct}%"
+        label = f"{det['type']} [AGGR:{motion}] {conf_pct}%" if aggr else f"{det['type']} [{motion}] {conf_pct}%"
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-        _draw_label(frame, label, anchor_x=x1, anchor_y=y1, color=(0, 255, 0),
-                    used_rects=used_rects)
+        _draw_label(frame, label, anchor_x=x1, anchor_y=y1, color=(0, 255, 0), used_rects=used_rects)
 
 
 def scan_for_watermarks(
@@ -592,7 +565,6 @@ def scan_for_watermarks(
         writer.writerow(["Plik", "Typ", "Klatka", "Timestamp", "Typ watermarku",
                          "Confidence", "Tekst", "Ruch", "Zrodlo", "Zapisany plik"])
 
-        # ============ FAZA 1 ============
         while True:
             if check_stop and check_stop():
                 break
@@ -632,7 +604,6 @@ def scan_for_watermarks(
                 detections_count += 1
                 fname = f"frame_{frame_idx}_t_{now_sec:.2f}s.jpg"
                 save_path = os.path.join(out_dir, fname)
-                motion = tracker.history.get(det['type'], [{}])[-1]
                 writer.writerow([
                     os.path.basename(media_path), "Video" if is_video else "Image",
                     frame_idx, f"{now_sec:.2f}", det['type'],
@@ -650,7 +621,6 @@ def scan_for_watermarks(
                                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 preview_callback(frame_to_draw, frame_detections)
 
-        # ============ FAZA 2 (Szczegolowa) ============
         if detailed_scan and missed_frames and not (check_stop and check_stop()):
             for i, m_idx in enumerate(missed_frames):
                 if check_stop and check_stop():
