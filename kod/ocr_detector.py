@@ -36,9 +36,9 @@ CORNER_RATIO = 0.15
 CORNER_SCALE = 5.0
 
 _LABEL_FONT      = cv2.FONT_HERSHEY_SIMPLEX
-_LABEL_SCALE     = 0.65
-_LABEL_THICKNESS = 2
-_LABEL_PAD       = 4
+_LABEL_SCALE     = 0.55   # nieznacznie mniejszy font
+_LABEL_THICKNESS = 1
+_LABEL_PAD       = 3
 
 
 class TextTracker:
@@ -478,15 +478,35 @@ def _perform_scan(
 
 
 def _annotate_frame(frame: np.ndarray, detections: List[dict], tracker: 'TextTracker',
-                    frame_idx: int, aggr: bool = False) -> None:
+                    frame_idx: int, aggr: bool = False) -> Dict[str, str]:
+    """
+    Rysuje ramki i minimalne etykiety na klatce.
+    Format etykiety: "TYP XX%" – tylko nazwa wykrytego watermarku i pewnosc OCR.
+    Status ruchu (NOWY/STATYCZNY/RUCHOMY) jest obliczany i zwracany jako slownik
+    {type_id: status} do zapisu w CSV, ale NIE trafia na obraz.
+
+    Returns:
+        slownik {det['type']: motion_status} dla kazdej detekcji
+    """
     used_rects: List[Tuple] = []
+    motion_map: Dict[str, str] = {}
+
     for det in detections:
         x1, y1, x2, y2 = det["bbox"]
+
+        # Oblicz status ruchu (do CSV), ale nie wyswietlaj na obrazie
         motion = tracker.update(frame_idx, det['type'], det['bbox'])
+        motion_map[det['type']] = motion
+
         conf_pct = int(det['confidence'] * 100)
-        label = f"{det['type']} [AGGR:{motion}] {conf_pct}%" if aggr else f"{det['type']} [{motion}] {conf_pct}%"
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-        _draw_label(frame, label, anchor_x=x1, anchor_y=y1, color=(0, 255, 0), used_rects=used_rects)
+        # Minimalna etykieta: "RUNWAY 85%" lub "RUNWAY 85%*" przy trybie aggr
+        label = f"{det['type']} {conf_pct}%" + ("*" if aggr else "")
+
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        _draw_label(frame, label, anchor_x=x1, anchor_y=y1,
+                    color=(0, 255, 0), used_rects=used_rects)
+
+    return motion_map
 
 
 def scan_for_watermarks(
@@ -543,7 +563,6 @@ def scan_for_watermarks(
 
     # ----------------------------------------------------------------
     # FAZA 0: Zaawansowana analiza (temporal median, invisible WM, FFT)
-    # Uruchamiamy na poczatku, na osobnym przebiegu cap
     # ----------------------------------------------------------------
     advanced_results: Dict[str, Any] = {}
     if is_video:
@@ -560,7 +579,6 @@ def scan_for_watermarks(
                 check_fft=True,
                 log_fn=_adv_log
             )
-            # Zapisz klatke mediany i diff do folderu sesji
             if advanced_results.get("temporal_median_frame") is not None:
                 cv2.imwrite(
                     os.path.join(out_dir, "temporal_median.jpg"),
@@ -579,7 +597,6 @@ def scan_for_watermarks(
         except Exception as e:
             print(f"[ADV] Blad analizy zaawansowanej: {e}", file=sys.stderr)
 
-        # Przewin cap na poczatek przed glowna petla OCR
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
@@ -587,7 +604,6 @@ def scan_for_watermarks(
         writer.writerow(["Plik", "Typ", "Klatka", "Timestamp", "Typ watermarku",
                          "Confidence", "Tekst", "Ruch", "Zrodlo", "Zapisany plik"])
 
-        # Zapisz wyniki zaawansowane do CSV jako wiersze specjalne
         if advanced_results:
             if advanced_results.get("invisible_wm", {}).get("found"):
                 iw = advanced_results["invisible_wm"]
@@ -618,14 +634,12 @@ def scan_for_watermarks(
                 found_types.add("FFT_ARTIFACT")
                 detections_count += 1
 
-        # ----------------------------------------------------------------
-        # FAZA 1: Glowna petla OCR
-        # ----------------------------------------------------------------
-
-        # Jesli mediana dostepna – dodaj ja jako dodatkowa wersje do skanowania
         median_frame = advanced_results.get("temporal_median_frame")
         overlay_diff  = advanced_results.get("overlay_diff")
 
+        # ----------------------------------------------------------------
+        # FAZA 1: Glowna petla OCR
+        # ----------------------------------------------------------------
         while True:
             if check_stop and check_stop():
                 break
@@ -651,8 +665,6 @@ def scan_for_watermarks(
                 ("OCR-INV",   cv2.bitwise_not(frame)),
                 ("OCR-DARK",  darkened),
             ]
-
-            # Dodaj mediane i diff jako dodatkowe wersje jesli sa dostepne
             if median_frame is not None:
                 versions_to_scan.append(("OCR-TEMPORAL-MEDIAN", median_frame))
             if overlay_diff is not None:
@@ -664,7 +676,8 @@ def scan_for_watermarks(
                 missed_frames.append(frame_idx)
 
             frame_to_draw = frame.copy()
-            _annotate_frame(frame_to_draw, frame_detections, tracker, frame_idx, aggr=False)
+            # _annotate_frame zwraca motion_map do CSV
+            motion_map = _annotate_frame(frame_to_draw, frame_detections, tracker, frame_idx, aggr=False)
 
             for det in frame_detections:
                 found_types.add(det['type'])
@@ -674,7 +687,9 @@ def scan_for_watermarks(
                 writer.writerow([
                     os.path.basename(media_path), "Video" if is_video else "Image",
                     frame_idx, f"{now_sec:.2f}", det['type'],
-                    f"{det['confidence']:.2f}", det['text'], "", det.get('source', ''), save_path
+                    f"{det['confidence']:.2f}", det['text'],
+                    motion_map.get(det['type'], ""),   # <-- ruch tylko w CSV
+                    det.get('source', ''), save_path
                 ])
                 try:
                     cv2.imwrite(save_path, frame_to_draw)
@@ -685,7 +700,7 @@ def scan_for_watermarks(
             if preview_callback:
                 if not frame_detections:
                     cv2.putText(frame_to_draw, f"Brak detekcji (klatka {frame_idx})",
-                                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
                 preview_callback(frame_to_draw, frame_detections)
 
         # ----------------------------------------------------------------
@@ -718,7 +733,7 @@ def scan_for_watermarks(
 
                 if frame_detections:
                     frame_to_draw = frame.copy()
-                    _annotate_frame(frame_to_draw, frame_detections, tracker, m_idx, aggr=True)
+                    motion_map = _annotate_frame(frame_to_draw, frame_detections, tracker, m_idx, aggr=True)
 
                     for det in frame_detections:
                         found_types.add(det['type'])
@@ -726,7 +741,9 @@ def scan_for_watermarks(
                         writer.writerow([
                             os.path.basename(media_path), "Video (Aggr)" if is_video else "Image (Aggr)",
                             m_idx, f"{now_sec:.2f}", det['type'],
-                            f"{det['confidence']:.2f}", det['text'], "", det.get('source', ''), ""
+                            f"{det['confidence']:.2f}", det['text'],
+                            motion_map.get(det['type'], ""),
+                            det.get('source', ''), ""
                         ])
 
                     save_path = os.path.join(out_dir, f"frame_{m_idx}_aggr_t_{now_sec:.2f}s.jpg")
@@ -742,7 +759,7 @@ def scan_for_watermarks(
                     if preview_callback:
                         tmp = frame.copy()
                         cv2.putText(tmp, f"Brak detekcji (AGGR klatka {m_idx})",
-                                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+                                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
                         preview_callback(tmp, [])
 
     cap.release()
