@@ -61,6 +61,18 @@ class TextTracker:
         return status
 
 
+def reset_reader():
+    """
+    Resetuje singleton OCR readera.
+    Wywolaj PRZED uruchomieniem skanu w nowym watku (np. QThread),
+    aby wymusic ponowna inicjalizacje modelu w kontekscie tego watku.
+    """
+    global _OCR_READER, _OCR_ENGINE_TYPE
+    with _OCR_LOCK:
+        _OCR_READER = None
+        _OCR_ENGINE_TYPE = None
+
+
 def _get_reader():
     """Zwraca singleton OCR reader. Thread-safe, lazy-load."""
     global _OCR_READER, _OCR_ENGINE_TYPE
@@ -306,6 +318,8 @@ def _perform_scan(
                                       "bbox": (x1, y1, x2, y2), "source": source_name})
             found_keys.add(kw)
 
+    # FIX: corner ROI uzywa osobnego found_keys zeby nie blokowac detekcji
+    # ktore moglby pominac glowny skan (np. watermark w rogu nie znaleziony w pelnej klatce)
     h_orig, w_orig = frame_original.shape[:2]
     for (corner_name, roi_upscaled, ox, oy) in _extract_corner_rois(frame_original):
         roi_versions = [
@@ -313,9 +327,10 @@ def _perform_scan(
             _preprocess_for_ocr(roi_upscaled),
             cv2.bitwise_not(roi_upscaled),
         ]
+        corner_found: set = set()  # izolowany per-corner, nie blokuje przez found_keys
         for rv in roi_versions:
             for (bbox, text, prob, kw) in _ocr_on_image(rv, confidence, keywords):
-                if kw in found_keys:
+                if kw in corner_found:
                     continue
                 x1 = ox + int(bbox[0][0] / CORNER_SCALE)
                 y1 = oy + int(bbox[0][1] / CORNER_SCALE)
@@ -325,6 +340,7 @@ def _perform_scan(
                 y1, y2 = max(0, y1), min(h_orig, y2)
                 frame_detections.append({"type": kw, "confidence": prob, "text": str(text).upper(),
                                           "bbox": (x1, y1, x2, y2), "source": corner_name})
+                corner_found.add(kw)
                 found_keys.add(kw)
 
     return frame_detections
@@ -339,6 +355,10 @@ def scan_for_watermarks(
     detailed_scan: bool = False,
     preview_callback: Optional[Callable[[np.ndarray, list], None]] = None
 ) -> Dict[str, Any]:
+
+    # FIX: guard na nieprawidlowy sample_rate
+    if not isinstance(sample_rate, int) or sample_rate <= 0:
+        sample_rate = 1
 
     is_video = os.path.splitext(media_path)[1].lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
     cap = cv2.VideoCapture(os.path.abspath(media_path))
