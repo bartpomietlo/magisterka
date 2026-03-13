@@ -1,13 +1,13 @@
 """
 ocr_detector.py
 
-Detekcja znaków wodnych / napisów „neratora“ w obrazach i wideo.
+Detekcja znakow wodnych / napisow AI w obrazach i wideo.
 - Zapis CSV z detekcjami.
-- Konfiguracja progu pewności (confidence) oraz próbkowania (sample_rate).
-- Opcjonalne drugie przejście (szczegółowa analiza dwufazowa).
+- Konfiguracja progu pewnosci (confidence) oraz probkowania (sample_rate).
+- Opcjonalne drugie przejscie (szczegolowa analiza dwufazowa).
 - Zapisywanie na dysk wersji oryginalnej i przefiltrowanej.
-- Template Matching dla graficznych znaków wodnych.
-- Corner ROI scanning — wykrywanie małych watermarków w rogach klatki.
+- Template Matching dla graficznych znakow wodnych.
+- Corner ROI scanning.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import csv
 import math
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
@@ -26,10 +27,9 @@ import config
 _OCR_READER = None
 _OCR_ENGINE_TYPE = None
 _YOLO_MODEL = None
+_OCR_LOCK = threading.Lock()  # zapobiega rownoleglem inicjalizacji modelu
 
-# Jaki procent wysokości/szerokości klatki stanowi jeden róg ROI
 CORNER_RATIO = 0.25
-# Skala upscale dla ROI corner
 CORNER_SCALE = 3.0
 
 
@@ -62,29 +62,34 @@ class TextTracker:
 
 
 def _get_reader():
+    """Zwraca singleton OCR reader. Thread-safe, lazy-load."""
     global _OCR_READER, _OCR_ENGINE_TYPE
     if _OCR_READER is not None:
         return _OCR_READER
 
-    try:
-        from paddleocr import PaddleOCR  # type: ignore
-        print(" [OCR] Ładowanie modelu PaddleOCR...")
-        _OCR_READER = PaddleOCR(use_angle_cls=False, lang='en', show_log=False)
-        _OCR_ENGINE_TYPE = "paddle"
-        return _OCR_READER
-    except ImportError:
-        pass
+    with _OCR_LOCK:
+        # podwojne sprawdzenie po wejsciu do locka
+        if _OCR_READER is not None:
+            return _OCR_READER
 
-    try:
-        import easyocr  # type: ignore
-        print(" [OCR] Ładowanie modelu EasyOCR...")
-        _OCR_READER = easyocr.Reader(["en", "pl"], gpu=False)
-        _OCR_ENGINE_TYPE = "easyocr"
-        return _OCR_READER
-    except Exception as e:
-        print(f" [OCR] Błąd ładowania OCR: {e}")
-        _OCR_READER = None
-        _OCR_ENGINE_TYPE = None
+        try:
+            from paddleocr import PaddleOCR  # type: ignore
+            _OCR_READER = PaddleOCR(use_angle_cls=False, lang='en', show_log=False)
+            _OCR_ENGINE_TYPE = "paddle"
+            return _OCR_READER
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        try:
+            import easyocr  # type: ignore
+            _OCR_READER = easyocr.Reader(["en", "pl"], gpu=False, verbose=False)
+            _OCR_ENGINE_TYPE = "easyocr"
+            return _OCR_READER
+        except Exception as e:
+            _OCR_READER = None
+            _OCR_ENGINE_TYPE = None
 
     return _OCR_READER
 
@@ -218,21 +223,15 @@ def _make_session_dir(input_path: str) -> str:
 
 
 def _extract_corner_rois(frame_bgr: np.ndarray) -> List[Tuple[str, np.ndarray, int, int]]:
-    """
-    Wytnij 4 rogi klatki i zwróć jako (nazwa, obraz_upscale, offset_x, offset_y).
-    Upscale CORNER_SCALE x — OCR dużo lepiej czyta mały tekst po powiekszeniu.
-    """
     h, w = frame_bgr.shape[:2]
     ch = int(h * CORNER_RATIO)
     cw = int(w * CORNER_RATIO)
-
     corners = [
-        ("CORNER-TL", frame_bgr[0:ch, 0:cw],           0,    0),
-        ("CORNER-TR", frame_bgr[0:ch, w - cw:w],        w - cw, 0),
-        ("CORNER-BL", frame_bgr[h - ch:h, 0:cw],        0,    h - ch),
-        ("CORNER-BR", frame_bgr[h - ch:h, w - cw:w],    w - cw, h - ch),
+        ("CORNER-TL", frame_bgr[0:ch, 0:cw],        0,      0),
+        ("CORNER-TR", frame_bgr[0:ch, w - cw:w],     w - cw, 0),
+        ("CORNER-BL", frame_bgr[h - ch:h, 0:cw],     0,      h - ch),
+        ("CORNER-BR", frame_bgr[h - ch:h, w - cw:w], w - cw, h - ch),
     ]
-
     result = []
     for name, roi, ox, oy in corners:
         if roi.size == 0:
@@ -243,10 +242,6 @@ def _extract_corner_rois(frame_bgr: np.ndarray) -> List[Tuple[str, np.ndarray, i
 
 
 def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> List[Tuple]:
-    """
-    Wykonaj OCR na obrazie. Zwraca liste (bbox_raw, text, prob) gdzie bbox_raw
-    jest w współrzędnych przekazanego obrazu (przed ewentualnym mappingiem).
-    """
     reader = _get_reader()
     if reader is None:
         return []
@@ -285,13 +280,11 @@ def _perform_scan(
     frame_detections = []
     found_keys: set = set()
 
-    # --- YOLO ---
     for (x1, y1, x2, y2, conf, label) in _detect_yolo_watermark(frame_original, confidence):
         frame_detections.append({"type": label, "confidence": conf, "text": f"[{label}]",
                                   "bbox": (x1, y1, x2, y2), "source": "YOLO"})
         found_keys.add(label)
 
-    # --- OCR pełna klatka + Template ---
     for source_name, base_image in versions_to_scan:
         for det in _detect_template_watermarks(base_image, confidence):
             if det["type"] not in found_keys:
@@ -313,10 +306,8 @@ def _perform_scan(
                                       "bbox": (x1, y1, x2, y2), "source": source_name})
             found_keys.add(kw)
 
-    # --- CORNER ROI SCAN (kluczowe dla Runway i podobnych) ---
     h_orig, w_orig = frame_original.shape[:2]
     for (corner_name, roi_upscaled, ox, oy) in _extract_corner_rois(frame_original):
-        # Skanuj różne wersje rogu
         roi_versions = [
             roi_upscaled,
             _preprocess_for_ocr(roi_upscaled),
@@ -326,12 +317,10 @@ def _perform_scan(
             for (bbox, text, prob, kw) in _ocr_on_image(rv, confidence, keywords):
                 if kw in found_keys:
                     continue
-                # Mapowanie współrzędnych z powrotem na pełną klatkę
                 x1 = ox + int(bbox[0][0] / CORNER_SCALE)
                 y1 = oy + int(bbox[0][1] / CORNER_SCALE)
                 x2 = ox + int(bbox[2][0] / CORNER_SCALE)
                 y2 = oy + int(bbox[2][1] / CORNER_SCALE)
-                # Clamp do granic klatki
                 x1, x2 = max(0, x1), min(w_orig, x2)
                 y1, y2 = max(0, y1), min(h_orig, y2)
                 frame_detections.append({"type": kw, "confidence": prob, "text": str(text).upper(),
@@ -354,7 +343,7 @@ def scan_for_watermarks(
     is_video = os.path.splitext(media_path)[1].lower() in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
     cap = cv2.VideoCapture(os.path.abspath(media_path))
     if not cap.isOpened():
-        return {"status": "ERROR", "error": "Nie można otworzyć pliku."}
+        return {"status": "ERROR", "error": "Nie mozna otworzyc pliku."}
 
     default_keywords = [
         "SORA", "OPENAI", "GENERATED", "AI VIDEO", "MADE WITH", "AI GENERATED",
@@ -382,7 +371,7 @@ def scan_for_watermarks(
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(["Plik", "Typ", "Klatka", "Timestamp", "Typ watermarku",
-                         "Confidence", "Tekst", "Ruch", "Źródło", "Zapisany plik"])
+                         "Confidence", "Tekst", "Ruch", "Zrodlo", "Zapisany plik"])
 
         # ============ FAZA 1 ============
         while True:
@@ -445,7 +434,7 @@ def scan_for_watermarks(
                                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 preview_callback(frame_to_draw, frame_detections)
 
-        # ============ FAZA 2 (Szczegółowa) ============
+        # ============ FAZA 2 (Szczegolowa) ============
         if detailed_scan and missed_frames and not (check_stop and check_stop()):
             for i, m_idx in enumerate(missed_frames):
                 if check_stop and check_stop():

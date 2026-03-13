@@ -17,8 +17,6 @@ try:
     C2PA_AVAILABLE = True
 except ImportError:
     C2PA_AVAILABLE = False
-    print("[C2PADetector] UWAGA: biblioteka c2pa-python nie jest zainstalowana.")
-    print("[C2PADetector] Zainstaluj: pip install c2pa-python")
 
 
 # =============================================================================
@@ -94,7 +92,6 @@ class C2PADetector:
         "hailuo": "Hailuo AI",
     }
 
-    # Mapowanie rozszerzen na MIME types
     MIME_TYPES = {
         ".mp4": "video/mp4",
         ".mov": "video/quicktime",
@@ -107,17 +104,13 @@ class C2PADetector:
     }
 
     def __init__(self):
-        if not C2PA_AVAILABLE:
-            print("[C2PADetector] Biblioteka c2pa-python niedostepna.")
+        pass  # bez print
 
     def _get_mime(self, path: str) -> str:
         ext = os.path.splitext(path)[1].lower()
         return self.MIME_TYPES.get(ext, "video/mp4")
 
     def detect(self, video_path: str) -> C2PAResult:
-        """
-        Odczytuje manifest C2PA z pliku wideo uzywajac c2pa.Reader.
-        """
         if not os.path.exists(video_path):
             return C2PAResult(video_path=video_path, found=False,
                               error=f"Plik nie istnieje: {video_path}")
@@ -137,7 +130,6 @@ class C2PADetector:
 
             manifest = json.loads(manifest_json)
 
-            # Jesli nie ma zadnych manifestow = brak C2PA
             if not manifest.get("manifests"):
                 return C2PAResult(video_path=video_path, found=False)
 
@@ -145,7 +137,6 @@ class C2PADetector:
 
         except Exception as e:
             error_msg = str(e)
-            # C2PA nie znaleziono - normalny przypadek
             no_c2pa_keywords = ["not found", "no manifest", "jumbf", "missing",
                                  "no active manifest", "c2pa not found", "no c2pa"]
             if any(kw in error_msg.lower() for kw in no_c2pa_keywords):
@@ -189,7 +180,6 @@ class C2PADetector:
                 if isinstance(subj, dict):
                     producer = producer or subj.get("name") or subj.get("organization")
 
-        # Sprawdz signature_info jako dodatkowe zrodlo producenta
         sig_info = active.get("signature_info", {})
         if isinstance(sig_info, dict):
             producer = producer or sig_info.get("issuer")
@@ -234,7 +224,7 @@ def detect_c2pa(video_path: str) -> C2PAResult:
 def print_c2pa_summary(result: C2PAResult):
     s = result.summary()
     print(f"\n=== C2PA: {s['file']} ===")
-    print(f"  Manifest C2PA:   {'TAK v' if s['c2pa_found'] else 'NIE x'}")
+    print(f"  Manifest C2PA:   {'TAK' if s['c2pa_found'] else 'NIE'}")
     print(f"  Generacja AI:    {'TAK' if s['is_ai_generated'] else 'NIE'}")
     print(f"  Generator:       {s['generator']}")
     print(f"  Wersja:          {s['generator_version']}")
