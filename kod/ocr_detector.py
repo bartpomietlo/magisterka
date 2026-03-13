@@ -27,10 +27,11 @@ import config
 _OCR_READER = None
 _OCR_ENGINE_TYPE = None
 _YOLO_MODEL = None
-_OCR_LOCK = threading.Lock()  # zapobiega rownoleglem inicjalizacji modelu
+_OCR_LOCK = threading.Lock()
 
-CORNER_RATIO = 0.25
-CORNER_SCALE = 3.0
+# FIX: mniejszy ROI = bardziej skupiony na rogu, wiekszy scale = lepszy OCR malego tekstu
+CORNER_RATIO = 0.15
+CORNER_SCALE = 5.0
 
 
 class TextTracker:
@@ -80,7 +81,6 @@ def _get_reader():
         return _OCR_READER
 
     with _OCR_LOCK:
-        # podwojne sprawdzenie po wejsciu do locka
         if _OCR_READER is not None:
             return _OCR_READER
 
@@ -253,6 +253,62 @@ def _extract_corner_rois(frame_bgr: np.ndarray) -> List[Tuple[str, np.ndarray, i
     return result
 
 
+def _corner_versions(roi_upscaled: np.ndarray) -> List[np.ndarray]:
+    """
+    FIX: rozszerzone wersje preprocessingu cornera.
+    Runway i podobne watermarki to maly, bialy, polprzezroczysty tekst -
+    wymagaja agresywniejszego przetwarzania niz pelna klatka.
+    """
+    versions = [roi_upscaled]  # RAW
+    try:
+        gray = cv2.cvtColor(roi_upscaled, cv2.COLOR_BGR2GRAY)
+
+        # CLAHE na jasnosci
+        versions.append(_preprocess_for_ocr(roi_upscaled))
+
+        # Odwrocone kolory (bialy tekst na ciemnym tle -> czarny na bialym)
+        versions.append(cv2.bitwise_not(roi_upscaled))
+
+        # CLAHE + odwrocone (bialy tekst na jasnym tle)
+        versions.append(cv2.bitwise_not(_preprocess_for_ocr(roi_upscaled)))
+
+        # Rozciagniecie histogramu (normalizacja kontrastu)
+        norm = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+        versions.append(cv2.cvtColor(norm, cv2.COLOR_GRAY2BGR))
+
+        # Odwrocony znormalizowany
+        versions.append(cv2.cvtColor(cv2.bitwise_not(norm), cv2.COLOR_GRAY2BGR))
+
+        # Blackhat - wydobywa ciemny tekst z jasnego tla
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
+        blackhat = cv2.normalize(
+            cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel), None, 0, 255, cv2.NORM_MINMAX
+        )
+        versions.append(cv2.cvtColor(blackhat, cv2.COLOR_GRAY2BGR))
+
+        # Tophat - wydobywa jasny tekst z ciemnego tla
+        tophat = cv2.normalize(
+            cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel), None, 0, 255, cv2.NORM_MINMAX
+        )
+        versions.append(cv2.cvtColor(tophat, cv2.COLOR_GRAY2BGR))
+
+        # Adaptive threshold
+        adapt = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+        versions.append(cv2.cvtColor(adapt, cv2.COLOR_GRAY2BGR))
+        versions.append(cv2.cvtColor(cv2.bitwise_not(adapt), cv2.COLOR_GRAY2BGR))
+
+        # Wyostrzenie
+        blur = cv2.GaussianBlur(roi_upscaled, (3, 3), 0)
+        sharp = cv2.addWeighted(roi_upscaled, 2.0, blur, -1.0, 0)
+        versions.append(sharp)
+
+    except Exception:
+        pass
+    return versions
+
+
 def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> List[Tuple]:
     reader = _get_reader()
     if reader is None:
@@ -318,18 +374,15 @@ def _perform_scan(
                                       "bbox": (x1, y1, x2, y2), "source": source_name})
             found_keys.add(kw)
 
-    # FIX: corner ROI uzywa osobnego found_keys zeby nie blokowac detekcji
-    # ktore moglby pominac glowny skan (np. watermark w rogu nie znaleziony w pelnej klatce)
+    # FIX: corner ROI - izolowany found_keys + nizszy prog confidence + wiecej wersji preprocessingu
     h_orig, w_orig = frame_original.shape[:2]
+    # Nizszy prog dla cornerow: watermarki w rogach sa czesto polprzezroczyste
+    corner_confidence = max(0.25, confidence - 0.25)
+
     for (corner_name, roi_upscaled, ox, oy) in _extract_corner_rois(frame_original):
-        roi_versions = [
-            roi_upscaled,
-            _preprocess_for_ocr(roi_upscaled),
-            cv2.bitwise_not(roi_upscaled),
-        ]
-        corner_found: set = set()  # izolowany per-corner, nie blokuje przez found_keys
-        for rv in roi_versions:
-            for (bbox, text, prob, kw) in _ocr_on_image(rv, confidence, keywords):
+        corner_found: set = set()
+        for rv in _corner_versions(roi_upscaled):
+            for (bbox, text, prob, kw) in _ocr_on_image(rv, corner_confidence, keywords):
                 if kw in corner_found:
                     continue
                 x1 = ox + int(bbox[0][0] / CORNER_SCALE)
@@ -356,7 +409,6 @@ def scan_for_watermarks(
     preview_callback: Optional[Callable[[np.ndarray, list], None]] = None
 ) -> Dict[str, Any]:
 
-    # FIX: guard na nieprawidlowy sample_rate
     if not isinstance(sample_rate, int) or sample_rate <= 0:
         sample_rate = 1
 
