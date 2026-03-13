@@ -1,6 +1,7 @@
 # gui.py  (PyQt6 + Modern QSS) - WATERMARK DETECTOR + PREVIEW
 import os
 import sys
+import time
 from typing import Optional
 
 import cv2
@@ -24,10 +25,24 @@ except Exception as _e:
     ocr_detector = None  # type: ignore[assignment]
     print(f"[OCR] Moduł ocr_detector niedostępny: {_e}")
 
+try:
+    import c2pa_detector  # type: ignore[import]
+except Exception as _e2:
+    c2pa_detector = None  # type: ignore[assignment]
+    print(f"[C2PA] Moduł c2pa_detector niedostępny: {_e2}")
+
 SUPPORTED_EXTS = {
     ".mp4", ".mov", ".avi", ".mkv", ".webm",
     ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff",
 }
+
+# Indeksy kolumn
+COL_FILE   = 0
+COL_TYPE   = 1
+COL_STATUS = 2
+COL_PCT    = 3
+COL_C2PA   = 4
+COL_CSV    = 5
 
 # ============================ QSS Themes ============================
 
@@ -188,8 +203,6 @@ class ToggleSwitch(QtWidgets.QAbstractButton):
 # ============================ Drop Overlay ============================
 
 class DropOverlay(QWidget):
-    """Półprzezroczysta nakładka na całe okno podczas drag."""
-
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -197,39 +210,26 @@ class DropOverlay(QWidget):
         self.hide()
 
     def resizeEvent(self, event):
-        self.setGeometry(self.parent().rect())  # type: ignore[union-attr]
+        self.setGeometry(self.parent().rect())  # type: ignore
 
     def paintEvent(self, event):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-
-        # Półprzezroczyste tło
         p.fillRect(self.rect(), QtGui.QColor(30, 30, 46, 200))
-
-        # Ramka
         pen = QtGui.QPen(QtGui.QColor("#89b4fa"), 4, Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(self.rect().adjusted(20, 20, -20, -20), 18, 18)
-
-        # Ikona i tekst
         p.setPen(QtGui.QColor("#cdd6f4"))
-        font = QtGui.QFont("Segoe UI", 28, QtGui.QFont.Weight.Bold)
-        p.setFont(font)
-        p.drawText(self.rect().adjusted(0, -60, 0, 0),
-                   Qt.AlignmentFlag.AlignCenter, "📂")
-
-        font2 = QtGui.QFont("Segoe UI", 16, QtGui.QFont.Weight.Bold)
-        p.setFont(font2)
+        p.setFont(QtGui.QFont("Segoe UI", 28, QtGui.QFont.Weight.Bold))
+        p.drawText(self.rect().adjusted(0, -60, 0, 0), Qt.AlignmentFlag.AlignCenter, "📂")
+        p.setFont(QtGui.QFont("Segoe UI", 16, QtGui.QFont.Weight.Bold))
         p.setPen(QtGui.QColor("#89b4fa"))
-        p.drawText(self.rect().adjusted(0, 40, 0, 0),
-                   Qt.AlignmentFlag.AlignCenter, "Upuść pliki lub folder tutaj")
-
-        font3 = QtGui.QFont("Segoe UI", 10)
-        p.setFont(font3)
+        p.drawText(self.rect().adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignCenter, "Upuść pliki lub folder tutaj")
+        p.setFont(QtGui.QFont("Segoe UI", 10))
         p.setPen(QtGui.QColor("#6c7086"))
-        p.drawText(self.rect().adjusted(0, 80, 0, 0),
-                   Qt.AlignmentFlag.AlignCenter, "obsługiwane: mp4 mov avi mkv webm jpg png bmp")
+        p.drawText(self.rect().adjusted(0, 80, 0, 0), Qt.AlignmentFlag.AlignCenter,
+                   "obsługiwane: mp4 mov avi mkv webm jpg png bmp")
         p.end()
 
 
@@ -252,24 +252,34 @@ def collect_paths_from_urls(urls) -> list:
     return paths
 
 
+def _fmt_eta(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
 # ============================ Worker ============================
 
 class WatermarkWorker(QtCore.QThread):
-    progress = pyqtSignal(int, int)
-    file_started = pyqtSignal(int, str, int)
+    progress  = pyqtSignal(int, int)       # curr, total (klatki bieżącego pliku)
+    eta_update = pyqtSignal(str)           # tekst ETA
+    file_started  = pyqtSignal(int, str, int)
     file_finished = pyqtSignal(int, dict)
-    log_line = pyqtSignal(str)
+    log_line      = pyqtSignal(str)
     frame_detected = pyqtSignal(np.ndarray, list)
-    all_done = pyqtSignal()
+    all_done      = pyqtSignal()
 
     def __init__(self, files, confidence, sample_rate, output_dir, detailed_scan, parent=None):
         super().__init__(parent)
-        self._files = files
-        self._confidence = confidence
-        self._sample_rate = sample_rate
-        self._output_dir = output_dir
+        self._files        = files
+        self._confidence   = confidence
+        self._sample_rate  = sample_rate
+        self._output_dir   = output_dir
         self._detailed_scan = detailed_scan
-        self._stop = False
+        self._stop         = False
 
     def stop(self):
         self._stop = True
@@ -283,6 +293,9 @@ class WatermarkWorker(QtCore.QThread):
         original_base = getattr(config, "REPORTS_BASE_DIR", "reports")
         if self._output_dir:
             setattr(config, "REPORTS_BASE_DIR", self._output_dir)
+
+        # --- ETA: zbieramy próbki czasu na klatkę ---
+        frame_times: list[float] = []
 
         try:
             for idx, path in enumerate(self._files):
@@ -299,10 +312,32 @@ class WatermarkWorker(QtCore.QThread):
                 self.file_started.emit(idx, fname, total_frames)
                 self.log_line.emit(
                     f"[{idx+1}/{len(self._files)}] Rozpoczynam analizę: {fname} "
-                    f"(Conf: {self._confidence}, Sample: {self._sample_rate}, Detailed: {self._detailed_scan})"
+                    f"(Conf: {self._confidence}, Sample: {self._sample_rate}, "
+                    f"Detailed: {self._detailed_scan})"
                 )
 
-                def cb(curr, tot):
+                sampled = max(1, total_frames // max(1, self._sample_rate)) if total_frames > 0 else 1
+                frames_done = [0]  # mutowalna referencja dla closure
+                file_start_t = time.monotonic()
+
+                def cb(curr, tot, _idx=idx, _sampled=sampled):
+                    frames_done[0] += 1
+                    elapsed = time.monotonic() - file_start_t
+                    if frames_done[0] > 0:
+                        avg = elapsed / frames_done[0]
+                        frame_times.append(avg)
+                        if len(frame_times) > 20:
+                            frame_times.pop(0)
+                        avg_global = sum(frame_times) / len(frame_times)
+                        remaining_this = max(0, _sampled - frames_done[0]) * avg_global
+                        # klatki pozostałych plików (szacunek)
+                        remaining_files = sum(
+                            max(1, int(cv2.VideoCapture(os.path.abspath(p)).get(cv2.CAP_PROP_FRAME_COUNT))
+                                // max(1, self._sample_rate))
+                            for p in self._files[_idx + 1:]
+                        ) if _idx + 1 < len(self._files) else 0
+                        eta_sec = remaining_this + remaining_files * avg_global
+                        self.eta_update.emit(f"ETA: {_fmt_eta(eta_sec)}")
                     self.progress.emit(int(curr), int(tot))
 
                 def preview_cb(*args):
@@ -310,6 +345,14 @@ class WatermarkWorker(QtCore.QThread):
                         self.frame_detected.emit(args[0], [])
                     elif len(args) >= 2:
                         self.frame_detected.emit(args[0], args[1])
+
+                # --- C2PA (przed OCR — szybkie) ---
+                c2pa_result: dict = {}
+                if c2pa_detector is not None:
+                    try:
+                        c2pa_result = c2pa_detector.detect_c2pa(path) or {}
+                    except Exception as _ce:
+                        c2pa_result = {"error": str(_ce)}
 
                 try:
                     res = ocr_detector.scan_for_watermarks(
@@ -322,17 +365,24 @@ class WatermarkWorker(QtCore.QThread):
                         preview_callback=preview_cb
                     )
                     details = res if isinstance(res, dict) else {}
-                    details["full_path"] = os.path.abspath(path)
+                    details["full_path"]   = os.path.abspath(path)
                     details["total_frames"] = total_frames
+                    details["c2pa"]        = c2pa_result
                 except Exception as e:
                     self.log_line.emit(f"[BŁĄD] {fname}: {e}")
-                    details = {"status": "ERROR", "full_path": os.path.abspath(path),
-                               "error": str(e), "total_frames": total_frames}
+                    details = {
+                        "status": "ERROR",
+                        "full_path": os.path.abspath(path),
+                        "error": str(e),
+                        "total_frames": total_frames,
+                        "c2pa": c2pa_result,
+                    }
 
                 self.file_finished.emit(idx, details)
         finally:
             setattr(config, "REPORTS_BASE_DIR", original_base)
 
+        self.eta_update.emit("")
         self.all_done.emit()
 
 
@@ -343,7 +393,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Watermark Detector (PyQt6) z Podglądem")
         self.resize(1400, 800)
-        self.setAcceptDrops(True)  # drag&drop na całe okno
+        self.setAcceptDrops(True)
 
         self.worker: Optional[WatermarkWorker] = None
         self.files: list[str] = []
@@ -380,7 +430,6 @@ class MainWindow(QMainWindow):
         self.grp_opts = QGroupBox("Parametry OCR (Watermark)")
         opts_lay = QVBoxLayout(self.grp_opts)
         opts_lay.setContentsMargins(8, 4, 8, 4)
-
         param_lay = QFormLayout()
 
         self.spin_conf = QDoubleSpinBox()
@@ -406,7 +455,6 @@ class MainWindow(QMainWindow):
         lbl_conf.setToolTip(self.spin_conf.toolTip())
         lbl_sample = QLabel("Sample rate:")
         lbl_sample.setToolTip(self.spin_sample.toolTip())
-
         param_lay.addRow(lbl_conf, self.spin_conf)
         param_lay.addRow(lbl_sample, self.spin_sample)
 
@@ -432,7 +480,6 @@ class MainWindow(QMainWindow):
 
         opts_lay.addLayout(param_lay)
         opts_lay.addLayout(dir_lay)
-
         top.addWidget(self.grp_opts, 1)
 
         self.toggle_dark = ToggleSwitch("Ciemny")
@@ -455,19 +502,27 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical)
         left_layout.addWidget(splitter, 1)
 
+        # Tabela — 6 kolumn
         self.table_results = QTableWidget()
-        self.table_results.setColumnCount(5)
+        self.table_results.setColumnCount(6)
         self.table_results.setHorizontalHeaderLabels([
-            "Plik", "Typ", "Status AI", "% AI w wideo", "Raport CSV"
+            "Plik", "Typ", "Status AI", "% AI w wideo", "C2PA", "Raport CSV"
         ])
-        self.table_results.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table_results.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table_results.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table_results.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.table_results.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        hh = self.table_results.horizontalHeader()
+        hh.setSectionResizeMode(COL_FILE,   QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(COL_TYPE,   QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(COL_PCT,    QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(COL_C2PA,   QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(COL_CSV,    QHeaderView.ResizeMode.Stretch)
         self.table_results.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_results.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_results.setAlternatingRowColors(True)
+        self.table_results.setToolTip(
+            "Dwuklik na wierszu — otworzy folder z raportem dla tego pliku."
+        )
+        # ←←← DOUBLE-CLICK → otwiera folder raportu
+        self.table_results.cellDoubleClicked.connect(self._on_row_double_clicked)
         splitter.addWidget(self.table_results)
 
         self.logView = QTextEdit()
@@ -475,6 +530,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.logView)
         splitter.setSizes([350, 250])
 
+        # Pasek postępu + ETA
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
         left_layout.addLayout(bottom)
@@ -485,10 +541,16 @@ class MainWindow(QMainWindow):
         self.progressBar.setFormat("%p%")
         bottom.addWidget(self.progressBar, 1)
 
+        self.lbl_eta = QLabel("")
+        self.lbl_eta.setMinimumWidth(90)
+        self.lbl_eta.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_eta.setStyleSheet("color: #89b4fa; font-weight: bold;")
+        bottom.addWidget(self.lbl_eta)
+
         self.btn_open_folder = QPushButton("📂 Otwórz folder wyników")
         self.btn_open_folder.setToolTip(
-            "Otwiera folder z zapisanymi klatkami i raportami CSV z ostatniej analizy.\n"
-            "Każdy plik ma własny podfolder z nazwą i znacznikiem czasu."
+            "Otwiera folder z ostatnim raportem.\n"
+            "Możesz też dwukliknąć wiersz w tabeli, żeby otworzyć folder konkretnego pliku."
         )
         self.btn_open_folder.clicked.connect(self.open_output_folder)
         self.btn_open_folder.setEnabled(False)
@@ -534,7 +596,6 @@ class MainWindow(QMainWindow):
         right_panel.setSizes([450, 150])
         root.addWidget(right_panel, 1)
 
-        # Nakładka drag&drop — na wierzchu centralWidget
         self._drop_overlay = DropOverlay(central)
         self._drop_overlay.setGeometry(central.rect())
         self._drop_overlay.raise_()
@@ -556,10 +617,10 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if not app:
             return
-        app.setStyle("Fusion")  # type: ignore[union-attr]
-        app.setStyleSheet(_DARK_QSS if dark else _LIGHT_QSS)  # type: ignore[union-attr]
+        app.setStyle("Fusion")  # type: ignore
+        app.setStyleSheet(_DARK_QSS if dark else _LIGHT_QSS)  # type: ignore
 
-    # -------------------- Drag & Drop (całe okno) --------------------
+    # -------------------- Drag & Drop --------------------
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -583,13 +644,34 @@ class MainWindow(QMainWindow):
     def dropEvent(self, event: QtGui.QDropEvent):
         self._drop_overlay.hide()
         if event.mimeData().hasUrls():
-            paths = collect_paths_from_urls(event.mimeData().urls())
-            self._add_files(paths)
+            self._add_files(collect_paths_from_urls(event.mimeData().urls()))
             event.acceptProposedAction()
         else:
             super().dropEvent(event)
 
+    # -------------------- Double-click → folder --------------------
+
+    @pyqtSlot(int, int)
+    def _on_row_double_clicked(self, row: int, _col: int) -> None:
+        """Dwuklik na wierszu → otwórz folder raportu tego pliku."""
+        folder = self.report_paths.get(row)
+        if not folder or not os.path.isdir(folder):
+            self.append_log("> Folder raportu nie jest jeszcze dostępny dla tego pliku.")
+            return
+        self._open_path(folder)
+
     # -------------------- Helpers --------------------
+
+    def _open_path(self, path: str) -> None:
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(os.path.abspath(path))  # type: ignore
+            elif sys.platform == "darwin":
+                QtCore.QProcess.startDetached("open", [path])
+            else:
+                QtCore.QProcess.startDetached("xdg-open", [path])
+        except Exception as e:
+            QMessageBox.warning(self, "Błąd", f"Nie udało się otworzyć: {e}")
 
     def append_log(self, text: str) -> None:
         self.logView.append(text)
@@ -614,18 +696,23 @@ class MainWindow(QMainWindow):
             ext = os.path.splitext(fname)[1].lower()
             file_type = "Video" if ext in {".mp4", ".mkv", ".avi", ".webm", ".mov"} else "Image"
 
-            self.table_results.setItem(row, 0, QTableWidgetItem(fname))
-            self.table_results.setItem(row, 1, QTableWidgetItem(file_type))
+            self.table_results.setItem(row, COL_FILE, QTableWidgetItem(fname))
+            self.table_results.setItem(row, COL_TYPE, QTableWidgetItem(file_type))
 
-            status_item = QTableWidgetItem("⏳ Oczekuje")
-            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table_results.setItem(row, 2, status_item)
+            si = QTableWidgetItem("⏳ Oczekuje")
+            si.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table_results.setItem(row, COL_STATUS, si)
 
-            pct_item = QTableWidgetItem("-")
-            pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table_results.setItem(row, 3, pct_item)
+            pi = QTableWidgetItem("-")
+            pi.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.table_results.setItem(row, COL_PCT, pi)
 
-            self.table_results.setItem(row, 4, QTableWidgetItem("-"))
+            ci = QTableWidgetItem("⏳")
+            ci.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            ci.setToolTip("C2PA / Content Credentials — oczekuje na analizę")
+            self.table_results.setItem(row, COL_C2PA, ci)
+
+            self.table_results.setItem(row, COL_CSV, QTableWidgetItem("-"))
             added += 1
 
         if added:
@@ -647,13 +734,11 @@ class MainWindow(QMainWindow):
             det = detections[0]
             x1, y1, x2, y2 = det.get("bbox", (0, 0, 10, 10))
             padding = 30
-            crop_bgr = frame_bgr[
-                max(0, y1 - padding):min(h, y2 + padding),
-                max(0, x1 - padding):min(w, x2 + padding)
-            ]
-            if crop_bgr.size > 0:
-                ch_c, cw_c, c_c = crop_bgr.shape
-                crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+            crop = frame_bgr[max(0, y1-padding):min(h, y2+padding),
+                             max(0, x1-padding):min(w, x2+padding)]
+            if crop.size > 0:
+                ch_c, cw_c, c_c = crop.shape
+                crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                 crop_qt = QImage(crop_rgb.data, cw_c, ch_c, c_c * cw_c, QImage.Format.Format_RGB888)
                 self.lbl_zoom.setPixmap(
                     QPixmap.fromImage(crop_qt).scaled(
@@ -675,7 +760,8 @@ class MainWindow(QMainWindow):
     def pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Wybierz pliki do analizy", "",
-            "Media (*.mp4 *.mov *.avi *.mkv *.webm *.jpg *.jpeg *.png *.bmp *.webp *.tif *.tiff);;Wszystkie pliki (*.*)",
+            "Media (*.mp4 *.mov *.avi *.mkv *.webm *.jpg *.jpeg *.png *.bmp *.webp *.tif *.tiff)"
+            ";;Wszystkie pliki (*.*)",
         )
         if paths:
             self._add_files(paths)
@@ -708,6 +794,7 @@ class MainWindow(QMainWindow):
             btn.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progressBar.setValue(0)
+        self.lbl_eta.setText("")
         self.lbl_preview.setText("Analiza w toku...")
         self.lbl_zoom.setText("Analiza w toku...")
 
@@ -720,6 +807,7 @@ class MainWindow(QMainWindow):
             parent=self
         )
         self.worker.progress.connect(self.on_progress)
+        self.worker.eta_update.connect(self.lbl_eta.setText)
         self.worker.file_started.connect(self.on_file_started)
         self.worker.file_finished.connect(self.on_file_finished)
         self.worker.log_line.connect(self.append_log)
@@ -736,16 +824,7 @@ class MainWindow(QMainWindow):
         if not self.current_run_dir or not os.path.isdir(self.current_run_dir):
             QMessageBox.information(self, "Brak Outputu", "Najpierw przeprowadź analizę.")
             return
-        path_to_open = os.path.abspath(self.current_run_dir)
-        try:
-            if sys.platform.startswith("win"):
-                os.startfile(path_to_open)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                QtCore.QProcess.startDetached("open", [path_to_open])
-            else:
-                QtCore.QProcess.startDetached("xdg-open", [path_to_open])
-        except Exception as e:
-            QMessageBox.warning(self, "Błąd", f"Nie udało się otworzyć: {e}")
+        self._open_path(self.current_run_dir)
 
     # -------------------- Slots --------------------
 
@@ -758,9 +837,12 @@ class MainWindow(QMainWindow):
     def on_file_started(self, idx: int, name: str, total_frames: int) -> None:
         self.progressBar.setValue(0)
         self._file_frame_data[idx] = {"total_frames": total_frames}
-        item = self.table_results.item(idx, 2)
+        item = self.table_results.item(idx, COL_STATUS)
         if item:
             item.setText("🔍 Analiza...")
+        c2pa_item = self.table_results.item(idx, COL_C2PA)
+        if c2pa_item:
+            c2pa_item.setText("🔍")
 
     @pyqtSlot(int, dict)
     def on_file_finished(self, idx: int, details: dict) -> None:
@@ -772,39 +854,75 @@ class MainWindow(QMainWindow):
 
         count = details.get("watermark_count", 0) or 0
         total_frames = details.get("total_frames", 0) or 0
-        sampled_frames = max(1, total_frames // max(1, self.spin_sample.value())) if total_frames > 0 else 1
+        sampled = max(1, total_frames // max(1, self.spin_sample.value())) if total_frames > 0 else 1
 
+        # Status AI
         if count > 0:
             types = ", ".join(details.get("watermark_types", []))
-            status_item = QTableWidgetItem(f"🔴 AI DETECTED\n{types}")
-            status_item.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
+            si = QTableWidgetItem(f"🔴 AI DETECTED\n{types}")
+            si.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
         else:
-            status_item = QTableWidgetItem("✅ AI CLEAR")
-            status_item.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
-        status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table_results.setItem(idx, 2, status_item)
+            si = QTableWidgetItem("✅ AI CLEAR")
+            si.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
+        si.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table_results.setItem(idx, COL_STATUS, si)
 
+        # % AI
         if total_frames > 0 and count > 0:
-            ai_pct = min(100.0, count / sampled_frames * 100)
-            pct_item = QTableWidgetItem(f"🔴 {ai_pct:.0f}% AI  |  ✅ {100 - ai_pct:.0f}% CLEAR")
-            pct_item.setForeground(QtGui.QBrush(
+            ai_pct = min(100.0, count / sampled * 100)
+            pi = QTableWidgetItem(f"🔴 {ai_pct:.0f}% AI  |  ✅ {100-ai_pct:.0f}% CLEAR")
+            pi.setForeground(QtGui.QBrush(
                 QtGui.QColor("#f38ba8") if ai_pct >= 50 else QtGui.QColor("#fab387")
             ))
         else:
-            pct_item = QTableWidgetItem("✅ 100% CLEAR")
-            pct_item.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
-        pct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table_results.setItem(idx, 3, pct_item)
+            pi = QTableWidgetItem("✅ 100% CLEAR")
+            pi.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
+        pi.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table_results.setItem(idx, COL_PCT, pi)
 
+        # C2PA
+        c2pa = details.get("c2pa", {})
+        if isinstance(c2pa, dict) and c2pa:
+            if "error" in c2pa:
+                c2pa_text = "⚠️ Błąd"
+                c2pa_color = "#fab387"
+                c2pa_tip = str(c2pa["error"])
+            elif c2pa.get("found") or c2pa.get("has_c2pa"):
+                c2pa_text = "✅ C2PA"
+                c2pa_color = "#a6e3a1"
+                issuer = c2pa.get("issuer") or c2pa.get("producer") or ""
+                c2pa_tip = f"Content Credentials znalezione.\nWydawca: {issuer}" if issuer else "Content Credentials znalezione."
+            else:
+                c2pa_text = "❌ Brak"
+                c2pa_color = "#6c7086"
+                c2pa_tip = "Brak metadanych C2PA / Content Credentials."
+        else:
+            if c2pa_detector is None:
+                c2pa_text = "— N/A"
+                c2pa_color = "#6c7086"
+                c2pa_tip = "Moduł c2pa_detector niedostępny."
+            else:
+                c2pa_text = "❌ Brak"
+                c2pa_color = "#6c7086"
+                c2pa_tip = "Brak metadanych C2PA."
+        ci = QTableWidgetItem(c2pa_text)
+        ci.setForeground(QtGui.QBrush(QtGui.QColor(c2pa_color)))
+        ci.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        ci.setToolTip(c2pa_tip)
+        self.table_results.setItem(idx, COL_C2PA, ci)
+
+        # Raport CSV
         report_file = details.get("csv_path", folder if folder else "Brak")
-        self.table_results.setItem(idx, 4, QTableWidgetItem(str(report_file)))
-        self.append_log(f"   ➔ Plik zakończony. Znaleziono {count} watermarków.")
+        self.table_results.setItem(idx, COL_CSV, QTableWidgetItem(str(report_file)))
+
+        self.append_log(f"   ➔ Plik zakończony. Znaleziono {count} watermarków. C2PA: {c2pa_text}")
         self.table_results.resizeRowsToContents()
 
     @pyqtSlot()
     def on_all_done(self) -> None:
         self.append_log("> Analiza wszystkich plików zakończona.")
         self.progressBar.setValue(0)
+        self.lbl_eta.setText("")
         for btn in (self.btn_pick_files, self.btn_pick_folder):
             btn.setEnabled(True)
         self.btn_start.setEnabled(len(self.files) > 0)
