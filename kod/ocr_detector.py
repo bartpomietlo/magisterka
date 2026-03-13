@@ -8,6 +8,7 @@ Detekcja znakow wodnych / napisow AI w obrazach i wideo.
 - Zapisywanie na dysk wersji oryginalnej i przefiltrowanej.
 - Template Matching dla graficznych znakow wodnych.
 - Corner ROI scanning.
+- Silnik OCR: RapidOCR (onnxruntime, bez PyTorch) > PaddleOCR > EasyOCR
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ import numpy as np
 import config
 
 _OCR_READER = None
-_OCR_ENGINE_TYPE = None
-_OCR_INIT_ERROR = None  # przechowuje ostatni blad inicjalizacji
+_OCR_ENGINE_TYPE = None  # "rapid" | "paddle" | "easyocr"
+_OCR_INIT_ERROR = None
 _YOLO_MODEL = None
 _OCR_LOCK = threading.Lock()
 
@@ -64,12 +65,6 @@ class TextTracker:
 
 
 def reset_reader():
-    """
-    Resetuje singleton OCR readera.
-    UWAGA: wywolanie tego w QThread a nastepnie _get_reader() w tym samym watku
-    moze spowodowac problemy z PyTorch DataLoader (pin_memory w watku bez event loop).
-    Uzyj warmup_reader() zamiast reset+get.
-    """
     global _OCR_READER, _OCR_ENGINE_TYPE, _OCR_INIT_ERROR
     with _OCR_LOCK:
         _OCR_READER = None
@@ -80,8 +75,7 @@ def reset_reader():
 def warmup_reader(log_fn=None):
     """
     Inicjalizuje OCR reader i zwraca (engine_name, error_or_None).
-    Bezpieczne do wywolania w QThread.
-    log_fn: opcjonalna funkcja(str) do logowania - np. self.log_line.emit
+    Kolejnosc prob: RapidOCR (onnxruntime, bez torch) > PaddleOCR > EasyOCR.
     """
     global _OCR_READER, _OCR_ENGINE_TYPE, _OCR_INIT_ERROR
 
@@ -94,14 +88,26 @@ def warmup_reader(log_fn=None):
                 pass
 
     with _OCR_LOCK:
-        # Jesli juz zaladowany - OK
         if _OCR_READER is not None:
             _log(f"[OCR] Engine juz zaladowany: {_OCR_ENGINE_TYPE}")
             return _OCR_ENGINE_TYPE, None
 
         _OCR_INIT_ERROR = None
 
-        # Proba PaddleOCR
+        # 1. RapidOCR - onnxruntime, NIE wymaga torch, dziala na Python 3.13
+        try:
+            from rapidocr_onnxruntime import RapidOCR  # type: ignore
+            _log("[OCR] Probuje RapidOCR (onnxruntime)...")
+            _OCR_READER = RapidOCR()
+            _OCR_ENGINE_TYPE = "rapid"
+            _log("[OCR] RapidOCR zaladowany pomyslnie.")
+            return "rapid", None
+        except ImportError:
+            _log("[OCR] RapidOCR niedostepny, probuje PaddleOCR...")
+        except Exception as e:
+            _log(f"[OCR] RapidOCR blad: {e}, probuje PaddleOCR...")
+
+        # 2. PaddleOCR
         try:
             from paddleocr import PaddleOCR  # type: ignore
             _log("[OCR] Probuje PaddleOCR...")
@@ -110,11 +116,11 @@ def warmup_reader(log_fn=None):
             _log("[OCR] PaddleOCR zaladowany pomyslnie.")
             return "paddle", None
         except ImportError:
-            _log("[OCR] PaddleOCR niedostepny (ImportError), probuje EasyOCR...")
+            _log("[OCR] PaddleOCR niedostepny, probuje EasyOCR...")
         except Exception as e:
             _log(f"[OCR] PaddleOCR blad: {e}, probuje EasyOCR...")
 
-        # Proba EasyOCR
+        # 3. EasyOCR (wymaga torch - moze nie dzialac na Python 3.13 + Windows)
         try:
             import easyocr  # type: ignore
             _log("[OCR] Inicjalizuje EasyOCR (moze chwile potrwac)...")
@@ -123,7 +129,7 @@ def warmup_reader(log_fn=None):
             _log("[OCR] EasyOCR zaladowany pomyslnie.")
             return "easyocr", None
         except Exception as e:
-            err = f"EasyOCR blad inicjalizacji: {e}"
+            err = f"Wszystkie silniki OCR niedostepne. Ostatni blad (EasyOCR): {e}"
             _log(f"[OCR] BLAD KRYTYCZNY: {err}")
             _OCR_READER = None
             _OCR_ENGINE_TYPE = None
@@ -132,17 +138,14 @@ def warmup_reader(log_fn=None):
 
 
 def _get_reader():
-    """Zwraca singleton OCR reader. Jesli nie zaladowany - probuje zaladowac."""
     global _OCR_READER
     if _OCR_READER is not None:
         return _OCR_READER
-    # Leniwa inicjalizacja bez loggera (fallback)
     warmup_reader()
     return _OCR_READER
 
 
 def get_init_error() -> Optional[str]:
-    """Zwraca ostatni blad inicjalizacji OCR lub None jesli OK."""
     return _OCR_INIT_ERROR
 
 
@@ -325,32 +328,80 @@ def _corner_versions(roi_upscaled: np.ndarray) -> List[np.ndarray]:
 
 
 def _ocr_on_image(image: np.ndarray, confidence: float, keywords: List[str]) -> List[Tuple]:
+    """
+    Uruchamia OCR na obrazie i zwraca listę (bbox, text, prob, keyword).
+    Obsługuje: RapidOCR, PaddleOCR, EasyOCR.
+    """
     reader = _get_reader()
     if reader is None:
         return []
 
-    results = []
+    # Normalizuj obraz do uint8 BGR
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+    raw_results = []
     try:
-        if _OCR_ENGINE_TYPE == "paddle":
+        if _OCR_ENGINE_TYPE == "rapid":
+            # RapidOCR zwraca (results, elapse) lub (None, elapse)
+            # results: lista [[bbox_points, text, confidence], ...]
+            # bbox_points: [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
+            result, _ = reader(image)
+            if result:
+                for item in result:
+                    # item: [bbox, text, score]
+                    bbox_pts = item[0]   # 4 punkty
+                    text = item[1]
+                    score = float(item[2]) if item[2] is not None else 0.0
+                    # Normalizuj bbox do formatu EasyOCR: [[tl],[tr],[br],[bl]]
+                    raw_results.append((bbox_pts, text, score))
+
+        elif _OCR_ENGINE_TYPE == "paddle":
             raw = reader.ocr(image, cls=False)
             if raw and raw[0]:
                 for line in raw[0]:
-                    results.append((line[0], line[1][0], line[1][1]))
-        else:
-            results = reader.readtext(image)
+                    raw_results.append((line[0], line[1][0], line[1][1]))
+
+        else:  # easyocr
+            raw_results = reader.readtext(image)
+
     except Exception:
         return []
 
     matches = []
-    for (bbox, text, prob) in results:
+    for (bbox, text, prob) in raw_results:
         if float(prob) < confidence:
             continue
         t_clean = str(text).upper().replace(" ", "")
         for k in keywords:
             if k.replace(" ", "") in t_clean:
-                matches.append((bbox, text, float(prob), k))
+                # Normalizuj bbox do [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
+                bbox_norm = _normalize_bbox(bbox)
+                matches.append((bbox_norm, text, float(prob), k))
                 break
     return matches
+
+
+def _normalize_bbox(bbox) -> list:
+    """
+    Normalizuje bbox do formatu [[x1,y1],[x2,y1],[x2,y2],[x1,y2]].
+    Obsługuje różne formaty zwracane przez silniki OCR.
+    """
+    try:
+        pts = list(bbox)
+        if len(pts) == 4:
+            # Już w formacie 4-punktowym - upewnij się że każdy punkt to lista/tuple [x,y]
+            result = []
+            for p in pts:
+                if hasattr(p, '__len__') and len(p) >= 2:
+                    result.append([float(p[0]), float(p[1])])
+                else:
+                    result.append([float(p), 0.0])
+            return result
+        # Fallback - zwróć jako prostokąt
+        return [[0, 0], [10, 0], [10, 10], [0, 10]]
+    except Exception:
+        return [[0, 0], [10, 0], [10, 10], [0, 10]]
 
 
 def _perform_scan(
@@ -425,7 +476,6 @@ def scan_for_watermarks(
     if not isinstance(sample_rate, int) or sample_rate <= 0:
         sample_rate = 1
 
-    # Sprawdz czy OCR jest dostepny
     if _OCR_READER is None:
         warmup_reader()
     if _OCR_READER is None:
