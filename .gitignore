@@ -37,10 +37,18 @@ nagrania/
 # Archiwa i duze pliki binarne
 *.rar
 *.zip
+*.mp4
+*.avi
+*.mov
+*.mkv
 
 # Modele AI (wagi sieci)
 kod/model/
 kod/models/
+kod/weights/
+
+# Deepfake detection challenge
+kod/deepfake-detection-challenge/
 
 # Wyniki dzialania, raporty i klatki
 kod/results/
