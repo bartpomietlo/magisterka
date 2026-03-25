@@ -75,17 +75,16 @@ def build_row(
     of  = len(result.get("optical_flow_rois",  []))
 
     iw_data   = result.get("invisible_wm", {})
-    iw_found  = 1 if iw_data.get("found", False) else 0
+    iw_found  = 1 if iw_data.get("matched") is not None else 0
 
     fft_data  = result.get("fft_artifacts", {})
     fft_found = 1 if fft_data.get("found", False) else 0
 
-    # Reguła detekcji:
-    # - invisible_wm LUB fft  → wykryto (silne sygnały, rzadko FP)
-    # - zero_variance + optical_flow jednocześnie → wykryto (wymaga obu żeby uniknąć FP)
-    # - sama zerowa wariancja w rogach bez OF → pomijamy (billboardy, statyczne tła)
+    # POPRAWKA: Nowa, bardziej odporna logika detekcji
     static_overlay = int(zv > 0 and of > 0)
-    detected = int(iw_found or fft_found or static_overlay)
+    of_found = int(of >= 3)  # próg minimalny
+    detected = int(of_found or static_overlay)
+
 
     return {
         "category":           category,
@@ -131,6 +130,15 @@ def compute_metrics(rows: list[dict]) -> list[dict]:
 
 
 def main() -> None:
+    # POPRAWKA: Usuń stare wyniki, aby zapewnić czystą ewaluację
+    if EVAL_CSV.exists():
+        print(f"[INFO] Usuwam stary plik wyników: {EVAL_CSV}")
+        EVAL_CSV.unlink()
+    if METRICS_CSV.exists():
+        print(f"[INFO] Usuwam stary plik metryk: {METRICS_CSV}")
+        METRICS_CSV.unlink()
+
+
     done     = load_done(EVAL_CSV)
     new_rows = []
 
