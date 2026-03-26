@@ -25,8 +25,10 @@ oraz metadane C2PA.
 - Detekcja widocznych watermarków (OCR + YOLO, słownik fraz generatorów AI)
 - Detekcja niewidzialnych watermarków (DWT/DWT-DCT/RivaGAN przez `imwatermark`)
 - Analiza Optical Flow (Farneback CPU/GPU) — wykrywa statyczne overlaye mimo ruchu kamery
+- `of_texture_variance_mean` — lokalna wariancja tekstury w ROI z Optical Flow
 - Detekcja zero-variance ROI — statyczne narożniki kadru
 - Analiza FFT noise — artefakty upsamplingu AI
+- `freq_hf_ratio_mean` — udział energii wysokich częstotliwości FFT
 - Detekcja metadanych C2PA (Coalition for Content Provenance and Authenticity)
 - Benchmark na czterech zestawach: `ai_baseline`, `adv_compressed`, `adv_cropped`, `adv_fp_trap`
 - Diagnostyka persistent FN (`kod/tools/fn_diagnosis_v2.py`) z liczbową skalą problemu i wzorcami awarii
@@ -53,8 +55,8 @@ System stosuje **dwustopniową fuzję sygnałów**:
 Heurystyki geometryczno-ruchowe mają dobrą czułość, ale niską specyficzność — w finalnej
 decyzji pełnią rolę pomocniczą wobec detektorów semantycznych i metadanych.
 
-Decyzja finalna opiera się na ważonym `score` kalibrowanym eksperymentalnie na zbiorze
-kalibracyjnym (threshold sweep → patrz `evaluate.py`).
+Decyzja finalna opiera się na regule punktowej **3/6 sygnałów** (z opcją sweep progów w `evaluate.py`),
+co zastępuje prostą zależność od pojedynczego sygnału OF.
 
 ---
 
