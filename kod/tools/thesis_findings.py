@@ -5,7 +5,7 @@ thesis_findings.py
 Czyta raw_signals.csv z evaluate.py i generuje ostrozny, "paper-ready" raport:
 - baseline always-negative
 - confirmed invisible watermark only (strict)
-- wykrycie podejrzanych legacy-hitow IW: iw_found=1 przy pustym iw_matched
+- wykrycie podejrzanych legacy-hitow IW: iw_found=1 przy pustym/nieznanym iw_matched
 - prosty raport sygnalow overlay-trap (OF/ZV) dla adv_fp_trap vs ai_baseline
 
 Uzycie:
@@ -20,6 +20,9 @@ import sys
 from pathlib import Path
 from statistics import mean, median
 
+# Wartosci traktowane jako "brak potwierdzonego dopasowania"
+_IW_EMPTY = {"", "nieznany", "none", "(brak)", "null"}
+
 
 def _int(x: str | int | float) -> int:
     return int(float(x))
@@ -27,6 +30,15 @@ def _int(x: str | int | float) -> int:
 
 def _float(x: str | int | float) -> float:
     return float(x)
+
+
+def _is_confirmed_iw(r: dict) -> bool:
+    """True tylko jesli iw_matched zawiera konkretna sygnature I similarity >= 0.85."""
+    matched = str(r.get("iw_matched", "")).strip().lower()
+    return (
+        matched not in _IW_EMPTY
+        and _float(r.get("iw_best_similarity", 0.0)) >= 0.85
+    )
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -103,7 +115,7 @@ def main() -> None:
     print_metrics(
         "Strict AI-positive: tylko potwierdzone dopasowanie invisible watermark",
         rows,
-        lambda r: (r.get("iw_matched", "") != "" and _float(r.get("iw_best_similarity", 0.0)) >= 0.85),
+        _is_confirmed_iw,
     )
 
     print_metrics(
@@ -112,9 +124,10 @@ def main() -> None:
         lambda r: _int(r.get("iw_found", 0)) == 1,
     )
 
+    # Podejrzane legacy-hity: iw_found=1 ale bez potwierdzonego matched
     suspicious_legacy = [
         r for r in rows
-        if _int(r.get("iw_found", 0)) == 1 and not r.get("iw_matched", "")
+        if _int(r.get("iw_found", 0)) == 1 and not _is_confirmed_iw(r)
     ]
     print("\n" + "=" * 76)
     print("Podejrzane legacy-hity IW: iw_found=1, ale brak potwierdzonego matched")
@@ -130,7 +143,7 @@ def main() -> None:
         print(f"  ... (+{len(suspicious_legacy)-20} kolejnych)")
 
     print("\n" + "=" * 76)
-    print("Sygnały overlay-trap: ai_baseline vs adv_fp_trap")
+    print("Sygnaly overlay-trap: ai_baseline vs adv_fp_trap")
     print("=" * 76)
     for field, cast in [
         ("of_max_area", _int),
@@ -153,9 +166,10 @@ def main() -> None:
         "Na podstawie surowych sygnalow nie nalezy utozsamiac samego dekodu invisible watermark "
         "z potwierdzonym sygnalem AI. W raporcie warto rozdzielic: "
         "(1) potwierdzone dopasowanie do znanej sygnatury, "
-        "(2) kandydat dekodu bez potwierdzenia, "
+        "(2) kandydat dekodu bez potwierdzenia (iw_found=1, iw_matched pusty/nieznany), "
         "(3) brak dodatniego sygnalu AI. "
-        "Heurystyki OF/ZV moga sluzyc jako filtr pulapek overlayowych, ale nie jako samodzielny dowod AI."
+        "Heurystyki OF/ZV moga sluzyc jako filtr pulapek overlayowych, "
+        "ale nie jako samodzielny dowod autentycznosci materialu."
     )
 
 
