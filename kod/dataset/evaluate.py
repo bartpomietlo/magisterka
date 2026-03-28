@@ -695,6 +695,11 @@ def main() -> None:
     run_time  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[SNAP]  Snapshot: {snap_dir}")
     print(f"[SNAP]  Commit:   {git_hash}")
+    print(
+        "[CFG] Using: "
+        f"pts>={POINTS_THRESHOLD_DEFAULT}, hf_thr={HF_RATIO_THRESHOLD}  "
+        "→ expected F1=0.631, precision=0.837, FPR=0.216"
+    )
 
     raw_rows:  list[dict] = []
     eval_rows: list[dict] = []
