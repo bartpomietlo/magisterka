@@ -38,6 +38,9 @@ from fusion_params import (
     BILLBOARD_CENTER_RATIO_MIN,
     BILLBOARD_GLOBAL_MOTION_MIN,
     BILLBOARD_TEXTURE_MIN,
+    CLEAN_AI_HF_THRESHOLD,
+    CLEAN_AI_MAX_AREA_RATIO,
+    ENABLE_CLEAN_AI_RESCUE,
     HF_RATIO_THRESHOLD_SWEEP,
     HF_RATIO_THRESHOLD,
     LOW_TEXTURE_THRESHOLD_SWEEP,
@@ -301,7 +304,24 @@ def fuse(
         max_area_ratio_threshold=max_area_ratio_threshold,
     )
     lower_third_ok = not broadcast_trap
-    detected = int(score >= points_threshold and lower_third_ok)
+    points_score = score
+    clean_ai_candidate = (
+        int(row.get("of_count", 0)) <= 1
+        and int(row.get("zv_count", 0)) == 0
+        and int(row.get("broadcast_scoreboard_trap", 0)) == 0
+        and int(row.get("broadcast_billboard_trap", 0)) == 0
+        and int(row.get("broadcast_pattern_trap", 0)) == 0
+        and int(row.get("of_wide_lower_roi_count", 0)) == 0
+        and float(row.get("freq_hf_ratio_mean", 1.0)) < CLEAN_AI_HF_THRESHOLD
+    )
+    clean_ai_rescue_strict = (
+        clean_ai_candidate
+        and float(row.get("of_max_area_ratio", 1.0)) < CLEAN_AI_MAX_AREA_RATIO
+    )
+    detected = int(
+        points_score >= POINTS_THRESHOLD_DEFAULT
+        or (ENABLE_CLEAN_AI_RESCUE and clean_ai_rescue_strict)
+    )
     return detected, float(score), (
         f"ai_score={score};ai_specific={int(ai_specific)};lower_third_ok={int(lower_third_ok)}"
     ), int(ai_specific), int(broadcast_trap)
