@@ -38,7 +38,9 @@ from fusion_params import (
     BILLBOARD_CENTER_RATIO_MIN,
     BILLBOARD_GLOBAL_MOTION_MIN,
     BILLBOARD_TEXTURE_MIN,
+    HF_RATIO_THRESHOLD_SWEEP,
     HF_RATIO_THRESHOLD,
+    LOW_TEXTURE_THRESHOLD_SWEEP,
     LOWER_THIRD_HARD_THRESHOLD,
     LOWER_THIRD_HARD_UPPER_MAX,
     LOW_TEXTURE_THRESHOLD,
@@ -85,7 +87,7 @@ EVAL_FIELDS = [
     "freq_hf_ratio_mean", "duration_s",
 ]
 
-DETECTOR_VERSION = "adv_v5_geom_penalty"
+DETECTOR_VERSION = "adv_v6_hf_texture_sweep"
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -154,12 +156,16 @@ def compute_ai_score(
         score += 1
     else:
         score -= 1
+    candidate_ai_shape = (
+        corner_compact >= 1
+        or (of_count >= 3 and area_ratio < max_area_ratio_threshold)
+    )
     # Signal 2: niski texture variance w ROI OF (AI smoothness)
-    if low_texture:
-        score += 2
+    if low_texture and candidate_ai_shape:
+        score += 1
     # Signal 3: niski udział HF (AI smoothness w domenie częstotliwości)
-    if low_hf:
-        score += 2
+    if low_hf and candidate_ai_shape:
+        score += 1
     # Signal 4: regiony zero-variance (statyczne overlaye/logotypy)
     if int(row.get("zv_count", 0)) >= 1:
         score += 1
@@ -183,16 +189,32 @@ def compute_ai_score(
         score -= 2
     if int(row.get("broadcast_pattern_trap", 0)) == 1:
         score -= 2
+    if (
+        lower_third_ratio >= 0.50
+        and wide_lower >= 1
+        and corner_compact == 0
+    ):
+        score -= 1
     return score
 
 
-def compute_ai_flags(row: dict[str, Any]) -> tuple[int, int]:
+def compute_ai_flags(
+    row: dict[str, Any],
+    low_texture_threshold: int = LOW_TEXTURE_THRESHOLD,
+    hf_ratio_threshold: float = HF_RATIO_THRESHOLD,
+    max_area_ratio_threshold: float = MAX_AREA_RATIO_THRESHOLD,
+) -> tuple[int, int]:
     iw_strong = bool(row.get("iw_matched")) and float(row.get("iw_similarity", 0.0)) >= 0.85
+    shape_signal = (
+        int(row.get("of_corner_compact_roi_count", 0)) >= 1
+        or float(row.get("of_max_area_ratio", 1.0)) < max_area_ratio_threshold
+    )
     ai_signals = [
-        int(row.get("of_low_texture_roi_count", 0)) >= LOW_TEXTURE_THRESHOLD,
-        float(row.get("freq_hf_ratio_mean", 1.0)) < HF_RATIO_THRESHOLD,
+        shape_signal and int(row.get("of_low_texture_roi_count", 0)) >= low_texture_threshold,
+        shape_signal and float(row.get("freq_hf_ratio_mean", 1.0)) < hf_ratio_threshold,
         int(row.get("of_corner_compact_roi_count", 0)) >= 1,
-        int(row.get("of_count", 0)) >= 3,
+        int(row.get("of_count", 0)) >= 3
+        and float(row.get("of_max_area_ratio", 1.0)) < max_area_ratio_threshold,
     ]
     ai_specific = int(iw_strong or sum(ai_signals) >= 2)
     lower_third_trap = int(
@@ -237,6 +259,9 @@ def fuse(
     broadcast_billboard_pattern: int,
     freq_hf_ratio_mean: float,
     points_threshold: int = POINTS_THRESHOLD_DEFAULT,
+    low_texture_threshold: int = LOW_TEXTURE_THRESHOLD,
+    hf_ratio_threshold: float = HF_RATIO_THRESHOLD,
+    max_area_ratio_threshold: float = MAX_AREA_RATIO_THRESHOLD,
 ) -> tuple[int, float, str, int, int]:
     row = {
         "zv_count": zv_count,
@@ -263,8 +288,18 @@ def fuse(
         "broadcast_billboard_pattern": broadcast_billboard_pattern,
         "freq_hf_ratio_mean": freq_hf_ratio_mean,
     }
-    score = compute_ai_score(row)
-    ai_specific, broadcast_trap = compute_ai_flags(row)
+    score = compute_ai_score(
+        row,
+        low_texture_threshold=low_texture_threshold,
+        hf_ratio_threshold=hf_ratio_threshold,
+        max_area_ratio_threshold=max_area_ratio_threshold,
+    )
+    ai_specific, broadcast_trap = compute_ai_flags(
+        row,
+        low_texture_threshold=low_texture_threshold,
+        hf_ratio_threshold=hf_ratio_threshold,
+        max_area_ratio_threshold=max_area_ratio_threshold,
+    )
     lower_third_ok = not broadcast_trap
     detected = int(score >= points_threshold and lower_third_ok)
     return detected, float(score), (
@@ -453,103 +488,201 @@ def compute_metrics(rows: list[dict], pred_field: str = "detected") -> list[dict
 # Threshold sweep (rozszerzony o iw_strong)
 # ───────────────────────────────────────────────────────────────────────
 
-def run_threshold_sweep(raw_rows: list[dict]) -> list[dict]:
+def run_threshold_sweep(raw_rows: list[dict]) -> dict[str, list[dict]]:
     """
-    Sweep bez ponownego przetwarzania wideo dla reguly punktowej 3/6.
+    Rozszerzony sweep po progach:
+    - points threshold
+    - HF ratio threshold
+    - low-texture threshold
     """
     points_thresholds = POINTS_THRESHOLD_SWEEP
+    hf_thresholds = HF_RATIO_THRESHOLD_SWEEP
+    texture_thresholds = LOW_TEXTURE_THRESHOLD_SWEEP
 
-    sweep_rows = []
-    for pts_thr in points_thresholds:
-        preds, gts = [], []
-        # Zliczaj FP per split osobno (potrzebne do wyboru konfiguracji wg TPR/FPR per-split)
-        split_tp:  dict[str, int] = {}
-        split_fp:  dict[str, int] = {}
-        split_tn:  dict[str, int] = {}
-        split_fn:  dict[str, int] = {}
-        for r in raw_rows:
-            gt_val = int(r["ground_truth"])
-            cat    = r["category"]
-            det, _, _, ai_specific, _ = fuse(
-                zv_count      = int(r["zv_count"]),
-                zv_lower_third_roi_count = int(r.get("zv_lower_third_roi_count", 0)),
-                of_count      = int(r["of_count"]),
-                of_max_area   = float(r.get("of_max_area", 0.0)),
-                of_max_area_ratio = float(r.get("of_max_area_ratio", 0.0)),
-                iw_similarity = float(r["iw_best_similarity"]),
-                iw_matched    = r["iw_matched"],
-                fft_score     = float(r["fft_score"]),
-                of_texture_variance_mean = float(r.get("of_texture_variance_mean", 0.0)),
-                of_low_texture_roi_count = int(r.get("of_low_texture_roi_count", 0)),
-                of_wide_lower_roi_count = int(r.get("of_wide_lower_roi_count", 0)),
-                of_corner_compact_roi_count = int(r.get("of_corner_compact_roi_count", 0)),
-                of_lower_third_roi_ratio = float(r.get("of_lower_third_roi_ratio", 0.0)),
-                of_upper_third_roi_ratio = float(r.get("of_upper_third_roi_ratio", 0.0)),
-                of_center_roi_ratio = float(r.get("of_center_roi_ratio", 0.0)),
-                of_wide_top_bottom_count = int(r.get("of_wide_top_bottom_count", 0)),
-                broadcast_scoreboard_trap = int(r.get("broadcast_scoreboard_trap", 0)),
-                broadcast_billboard_trap = int(r.get("broadcast_billboard_trap", 0)),
-                broadcast_pattern_trap = int(r.get("broadcast_pattern_trap", 0)),
-                broadcast_lower_third_pattern = int(r.get("broadcast_lower_third_pattern", 0)),
-                broadcast_scoreboard_pattern = int(r.get("broadcast_scoreboard_pattern", 0)),
-                broadcast_billboard_pattern = int(r.get("broadcast_billboard_pattern", 0)),
-                freq_hf_ratio_mean = float(r.get("freq_hf_ratio_mean", 0.0)),
-                points_threshold = pts_thr,
-            )
-            # Twarda reguła bezpieczeństwa: bez sygnału AI-specific nie ma detekcji.
-            if ai_specific == 0:
-                det = 0
-            preds.append(det)
-            gts.append(gt_val)
-            if det == 1 and gt_val == 1: split_tp[cat] = split_tp.get(cat, 0) + 1
-            if det == 1 and gt_val == 0: split_fp[cat] = split_fp.get(cat, 0) + 1
-            if det == 0 and gt_val == 0: split_tn[cat] = split_tn.get(cat, 0) + 1
-            if det == 0 and gt_val == 1: split_fn[cat] = split_fn.get(cat, 0) + 1
+    heuristic_rows: list[dict] = []
+    activation_rows: list[dict] = []
+    score_dist_rows: list[dict] = []
 
-        tp = sum(p == 1 and g == 1 for p, g in zip(preds, gts))
-        tn = sum(p == 0 and g == 0 for p, g in zip(preds, gts))
-        fp = sum(p == 1 and g == 0 for p, g in zip(preds, gts))
-        fn = sum(p == 0 and g == 1 for p, g in zip(preds, gts))
-        n  = len(gts)
-        acc  = (tp + tn) / n if n else 0
-        prec = tp / (tp + fp)   if (tp + fp) else 0
-        rec  = tp / (tp + fn)   if (tp + fn) else 0
-        f1   = 2 * prec * rec / (prec + rec) if (prec + rec) else 0
-        fpr  = fp / (fp + tn)   if (fp + tn) else 0
+    categories = sorted({r["category"] for r in raw_rows})
 
-        # TPR per split (klucz: TPR_aibaseline, FPR_adv_fp_trap)
-        def _tpr(cat: str) -> str:
-            tp_c = split_tp.get(cat, 0)
-            fn_c = split_fn.get(cat, 0)
-            return f"{tp_c / (tp_c + fn_c):.4f}" if (tp_c + fn_c) > 0 else "N/A"
+    for hf_thr in hf_thresholds:
+        for tex_thr in texture_thresholds:
+            activation_totals = {
+                cat: {
+                    "n": 0,
+                    "low_hf": 0,
+                    "low_texture": 0,
+                    "corner_compact": 0,
+                    "scoreboard_trap": 0,
+                    "billboard_trap": 0,
+                    "pattern_trap": 0,
+                }
+                for cat in categories
+            }
+            for r in raw_rows:
+                cat = r["category"]
+                activation_totals[cat]["n"] += 1
+                if float(r.get("freq_hf_ratio_mean", 1.0)) < hf_thr:
+                    activation_totals[cat]["low_hf"] += 1
+                if int(r.get("of_low_texture_roi_count", 0)) >= tex_thr:
+                    activation_totals[cat]["low_texture"] += 1
+                if int(r.get("of_corner_compact_roi_count", 0)) >= 1:
+                    activation_totals[cat]["corner_compact"] += 1
+                if int(r.get("broadcast_scoreboard_trap", 0)) == 1:
+                    activation_totals[cat]["scoreboard_trap"] += 1
+                if int(r.get("broadcast_billboard_trap", 0)) == 1:
+                    activation_totals[cat]["billboard_trap"] += 1
+                if int(r.get("broadcast_pattern_trap", 0)) == 1:
+                    activation_totals[cat]["pattern_trap"] += 1
 
-        def _fpr_split(cat: str) -> str:
-            fp_c = split_fp.get(cat, 0)
-            tn_c = split_tn.get(cat, 0)
-            return f"{fp_c / (fp_c + tn_c):.4f}" if (fp_c + tn_c) > 0 else "N/A"
+            for cat, vals in activation_totals.items():
+                n_cat = max(vals["n"], 1)
+                activation_rows.append({
+                    "hf_ratio_threshold": f"{hf_thr:.2f}",
+                    "low_texture_threshold": tex_thr,
+                    "category": cat,
+                    "low_hf_rate": f"{vals['low_hf'] / n_cat:.4f}",
+                    "low_texture_rate": f"{vals['low_texture'] / n_cat:.4f}",
+                    "corner_compact_rate": f"{vals['corner_compact'] / n_cat:.4f}",
+                    "scoreboard_trap_rate": f"{vals['scoreboard_trap'] / n_cat:.4f}",
+                    "billboard_trap_rate": f"{vals['billboard_trap'] / n_cat:.4f}",
+                    "pattern_trap_rate": f"{vals['pattern_trap'] / n_cat:.4f}",
+                })
 
-        sweep_rows.append({
-            "points_thr":            pts_thr,
-            "TP": tp, "TN": tn, "FP": fp, "FN": fn,
-            "accuracy":              f"{acc:.4f}",
-            "precision":             f"{prec:.4f}",
-            "recall":                f"{rec:.4f}",
-            "f1":                    f"{f1:.4f}",
-            "FPR_global":            f"{fpr:.4f}",
-            "TPR_aibaseline":        _tpr("ai_baseline"),
-            "FPR_adv_fp_trap":       _fpr_split("adv_fp_trap"),
-            "TPR_adv_compressed":    _tpr("adv_compressed"),
-            "TPR_adv_cropped":       _tpr("adv_cropped"),
-        })
+            for pts_thr in points_thresholds:
+                preds, gts = [], []
+                split_tp: dict[str, int] = {}
+                split_fp: dict[str, int] = {}
+                split_tn: dict[str, int] = {}
+                split_fn: dict[str, int] = {}
+                score_buckets: dict[str, dict[int, int]] = {cat: {} for cat in categories}
 
-    # Sortuj: najpierw FPR_adv_fp_trap ASC, potem TPR_aibaseline DESC
-    def _sort_key(x: dict):
-        fpr_fp = float(x["FPR_adv_fp_trap"]) if x["FPR_adv_fp_trap"] != "N/A" else 1.0
-        tpr_ai = float(x["TPR_aibaseline"])  if x["TPR_aibaseline"]  != "N/A" else 0.0
-        return (fpr_fp, -tpr_ai)
+                for r in raw_rows:
+                    gt_val = int(r["ground_truth"])
+                    cat = r["category"]
+                    det, score, _, ai_specific, _ = fuse(
+                        zv_count=int(r["zv_count"]),
+                        zv_lower_third_roi_count=int(r.get("zv_lower_third_roi_count", 0)),
+                        of_count=int(r["of_count"]),
+                        of_max_area=float(r.get("of_max_area", 0.0)),
+                        of_max_area_ratio=float(r.get("of_max_area_ratio", 0.0)),
+                        iw_similarity=float(r["iw_best_similarity"]),
+                        iw_matched=r["iw_matched"],
+                        fft_score=float(r["fft_score"]),
+                        of_texture_variance_mean=float(r.get("of_texture_variance_mean", 0.0)),
+                        of_low_texture_roi_count=int(r.get("of_low_texture_roi_count", 0)),
+                        of_wide_lower_roi_count=int(r.get("of_wide_lower_roi_count", 0)),
+                        of_corner_compact_roi_count=int(r.get("of_corner_compact_roi_count", 0)),
+                        of_lower_third_roi_ratio=float(r.get("of_lower_third_roi_ratio", 0.0)),
+                        of_upper_third_roi_ratio=float(r.get("of_upper_third_roi_ratio", 0.0)),
+                        of_center_roi_ratio=float(r.get("of_center_roi_ratio", 0.0)),
+                        of_wide_top_bottom_count=int(r.get("of_wide_top_bottom_count", 0)),
+                        broadcast_scoreboard_trap=int(r.get("broadcast_scoreboard_trap", 0)),
+                        broadcast_billboard_trap=int(r.get("broadcast_billboard_trap", 0)),
+                        broadcast_pattern_trap=int(r.get("broadcast_pattern_trap", 0)),
+                        broadcast_lower_third_pattern=int(r.get("broadcast_lower_third_pattern", 0)),
+                        broadcast_scoreboard_pattern=int(r.get("broadcast_scoreboard_pattern", 0)),
+                        broadcast_billboard_pattern=int(r.get("broadcast_billboard_pattern", 0)),
+                        freq_hf_ratio_mean=float(r.get("freq_hf_ratio_mean", 0.0)),
+                        points_threshold=pts_thr,
+                        low_texture_threshold=tex_thr,
+                        hf_ratio_threshold=hf_thr,
+                    )
+                    if ai_specific == 0:
+                        det = 0
+                    preds.append(det)
+                    gts.append(gt_val)
+                    bucket = int(round(score))
+                    score_buckets[cat][bucket] = score_buckets[cat].get(bucket, 0) + 1
+                    if det == 1 and gt_val == 1:
+                        split_tp[cat] = split_tp.get(cat, 0) + 1
+                    if det == 1 and gt_val == 0:
+                        split_fp[cat] = split_fp.get(cat, 0) + 1
+                    if det == 0 and gt_val == 0:
+                        split_tn[cat] = split_tn.get(cat, 0) + 1
+                    if det == 0 and gt_val == 1:
+                        split_fn[cat] = split_fn.get(cat, 0) + 1
 
-    sweep_rows.sort(key=_sort_key)
-    return sweep_rows
+                for cat, buckets in score_buckets.items():
+                    for score_val, count in sorted(buckets.items()):
+                        score_dist_rows.append({
+                            "hf_ratio_threshold": f"{hf_thr:.2f}",
+                            "low_texture_threshold": tex_thr,
+                            "points_threshold": pts_thr,
+                            "category": cat,
+                            "score_bucket": score_val,
+                            "count": count,
+                        })
+
+                tp = sum(p == 1 and g == 1 for p, g in zip(preds, gts))
+                tn = sum(p == 0 and g == 0 for p, g in zip(preds, gts))
+                fp = sum(p == 1 and g == 0 for p, g in zip(preds, gts))
+                fn = sum(p == 0 and g == 1 for p, g in zip(preds, gts))
+                prec = tp / (tp + fp) if (tp + fp) else 0.0
+                rec = tp / (tp + fn) if (tp + fn) else 0.0
+                f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+
+                def _tpr(cat: str) -> float:
+                    tp_c = split_tp.get(cat, 0)
+                    fn_c = split_fn.get(cat, 0)
+                    return (tp_c / (tp_c + fn_c)) if (tp_c + fn_c) > 0 else 0.0
+
+                def _fpr(cat: str) -> float:
+                    fp_c = split_fp.get(cat, 0)
+                    tn_c = split_tn.get(cat, 0)
+                    return (fp_c / (fp_c + tn_c)) if (fp_c + tn_c) > 0 else 0.0
+
+                heuristic_rows.append({
+                    "hf_ratio_threshold": f"{hf_thr:.2f}",
+                    "low_texture_threshold": tex_thr,
+                    "points_threshold": pts_thr,
+                    "points_thr": pts_thr,
+                    "TPR_aibaseline": f"{_tpr('ai_baseline'):.4f}",
+                    "TPR_adv_compressed": f"{_tpr('adv_compressed'):.4f}",
+                    "TPR_adv_cropped": f"{_tpr('adv_cropped'):.4f}",
+                    "FPR_adv_fp_trap": f"{_fpr('adv_fp_trap'):.4f}",
+                    "F1_global": f"{f1:.4f}",
+                    "f1": f"{f1:.4f}",
+                    "precision_global": f"{prec:.4f}",
+                    "precision": f"{prec:.4f}",
+                    "recall_global": f"{rec:.4f}",
+                    "recall": f"{rec:.4f}",
+                    "objective": f"{(_tpr('ai_baseline') - 2.0 * _fpr('adv_fp_trap')):.4f}",
+                })
+
+    feasible = [r for r in heuristic_rows if float(r["FPR_adv_fp_trap"]) <= 0.15]
+    if feasible:
+        best = sorted(
+            feasible,
+            key=lambda x: (float(x["TPR_aibaseline"]), -float(x["FPR_adv_fp_trap"])),
+            reverse=True,
+        )[0]
+    else:
+        best = sorted(heuristic_rows, key=lambda x: float(x["objective"]), reverse=True)[0]
+
+    # Pareto frontier (maximize TPR, minimize FPR)
+    sorted_rows = sorted(
+        heuristic_rows,
+        key=lambda x: (float(x["FPR_adv_fp_trap"]), -float(x["TPR_aibaseline"])),
+    )
+    pareto_rows: list[dict] = []
+    best_tpr_seen = -1.0
+    for row in sorted_rows:
+        tpr = float(row["TPR_aibaseline"])
+        if tpr > best_tpr_seen:
+            pareto_rows.append(row)
+            best_tpr_seen = tpr
+
+    heuristic_rows.sort(
+        key=lambda x: (float(x["FPR_adv_fp_trap"]), -float(x["TPR_aibaseline"]))
+    )
+    return {
+        "heuristic_rows": heuristic_rows,
+        "activation_rows": activation_rows,
+        "score_dist_rows": score_dist_rows,
+        "best_row": [best],
+        "pareto_rows": pareto_rows,
+    }
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -710,21 +843,55 @@ def main() -> None:
 
     # —— Threshold sweep (na surowych sygnałach) ——
     if raw_rows:
-        print("\n[SWEEP] Obliczam threshold sweep (progi punktowe)...")
+        print("\n[SWEEP] Obliczam rozszerzony sweep heurystyk...")
         sweep = run_threshold_sweep(raw_rows)
-        sweep_path = snap_dir / "threshold_sweep.csv"
-        with sweep_path.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(sweep[0].keys()))
+        heuristic_rows = sweep["heuristic_rows"]
+        activation_rows = sweep["activation_rows"]
+        score_dist_rows = sweep["score_dist_rows"]
+        best_row = sweep["best_row"]
+        pareto_rows = sweep["pareto_rows"]
+
+        threshold_sweep_path = snap_dir / "threshold_sweep.csv"
+        heuristic_sweep_path = snap_dir / "heuristic_param_sweep.csv"
+        activation_path = snap_dir / "feature_activation_summary.csv"
+        score_dist_path = snap_dir / "score_distribution_by_split.csv"
+        best_path = snap_dir / "best_config_selection.csv"
+        pareto_path = snap_dir / "pareto_frontier.csv"
+
+        with threshold_sweep_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(heuristic_rows[0].keys()))
             writer.writeheader()
-            writer.writerows(sweep)
-        print(f"[SWEEP]   {sweep_path}  ({len(sweep)} kombinacji)")
+            writer.writerows(heuristic_rows)
+        shutil.copyfile(threshold_sweep_path, heuristic_sweep_path)
+        with activation_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(activation_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(activation_rows)
+        with score_dist_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(score_dist_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(score_dist_rows)
+        with best_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(best_row[0].keys()))
+            writer.writeheader()
+            writer.writerows(best_row)
+        with pareto_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(pareto_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(pareto_rows)
+
+        print(f"[SWEEP]   {threshold_sweep_path}  ({len(heuristic_rows)} kombinacji)")
+        print(f"[SWEEP]   {activation_path}")
+        print(f"[SWEEP]   {score_dist_path}")
+        print(f"[SWEEP]   {best_path}")
+        print(f"[SWEEP]   {pareto_path}")
 
         print("\n--- Top-5 konfiguracji (FPR_adv_fp_trap ASC, TPR_aibaseline DESC) ---")
-        for row in sweep[:5]:
+        for row in heuristic_rows[:5]:
             print(
-                f"  pts={row['points_thr']}  "
+                f"  hf={row['hf_ratio_threshold']} tex={row['low_texture_threshold']} pts={row['points_threshold']}  "
                 f"FPR_fptrap={row['FPR_adv_fp_trap']}  "
-                f"TPR_ai={row['TPR_aibaseline']}  F1={row['f1']}"
+                f"TPR_ai={row['TPR_aibaseline']}  F1={row['F1_global']}"
             )
 
     # —— Kopiuj do latest/ ——
