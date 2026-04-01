@@ -19,19 +19,7 @@ from PyQt6.QtWidgets import (
 
 import config
 
-try:
-    import ocr_detector  # type: ignore[import]
-except Exception as _e:
-    ocr_detector = None  # type: ignore[assignment]
-    print(f"[OCR] Moduł ocr_detector niedostępny: {_e}")
-
-try:
-    import c2pa_detector  # type: ignore[import]
-except Exception as _e2:
-    c2pa_detector = None  # type: ignore[assignment]
-    print(f"[C2PA] Moduł c2pa_detector niedostępny: {_e2}")
-
-# Integracja z evaluate.py — logika fuzji sygnałów
+# Integracja z evaluate.py — logika fuzji sygnałów (główny pipeline)
 try:
     import sys as _sys
     import os as _os
@@ -43,7 +31,30 @@ try:
     print("[EVAL] Moduł evaluate.py załadowany — używam pipeline fuzji sygnałów.")
 except Exception as _ee:
     EVALUATE_AVAILABLE = False
+    scan_video = None  # type: ignore[assignment]
+    extract_signals = None  # type: ignore[assignment]
+    fuse = None  # type: ignore[assignment]
+    detect_c2pa_signal = None  # type: ignore[assignment]
     print(f"[EVAL] Moduł evaluate.py niedostępny ({_ee}) — fallback do ocr_detector.")
+
+# ocr_detector i c2pa_detector importowane leniwie — tylko gdy evaluate.py niedostępny.
+# Nie importujemy ich na poziomie modułu, żeby uniknąć zbędnej inicjalizacji OCR
+# (EasyOCR/PaddleOCR zajmuje kilka sekund i zaśmieca logi gdy nie jest potrzebny).
+ocr_detector = None
+c2pa_detector = None
+
+if not EVALUATE_AVAILABLE:
+    try:
+        import ocr_detector as _ocr_mod  # type: ignore[import]
+        ocr_detector = _ocr_mod
+    except Exception as _e:
+        print(f"[OCR] Moduł ocr_detector niedostępny: {_e}")
+
+    try:
+        import c2pa_detector as _c2pa_mod  # type: ignore[import]
+        c2pa_detector = _c2pa_mod
+    except Exception as _e2:
+        print(f"[C2PA] Moduł c2pa_detector niedostępny: {_e2}")
 
 SUPPORTED_EXTS = {
     ".mp4", ".mov", ".avi", ".mkv", ".webm",
@@ -296,17 +307,6 @@ class GripSplitter(QSplitter):
 class ClampedHeader(QHeaderView):
     """
     QHeaderView z twardym ograniczeniem sumy szerokości kolumn do viewportu.
-
-    Mechanizm squeeze-resize:
-    - Gdy kolumna col rośnie o delta, natychmiast kurczymy kolumnę col+1
-      o tę samą wartość — suma pozostaje równa szerokości viewportu.
-    - Jeśli sąsiad osiągnął minimum, wzrost bieżącej kolumny jest blokowany.
-    - Gdy kolumna col maleje, kolumna col+1 dostaje zwolnione miejsce.
-    - Ostatnia kolumna nigdy nie może być poszerzona (nie ma sąsiada do
-      skurczenia), więc drag na jej prawej krawędzi jest efektywnie zablokowany.
-    - _rebalance() wywoływany po mouseRelease i resizeEvent wyrównuje ostatnią
-      kolumnę tak, żeby suma === viewport (naprawia drobne rozbieżności).
-    - _guard zapobiega rekurencji przy programowym wywołaniu resizeSection.
     """
 
     def __init__(self, orientation, min_widths: list[int], parent=None):
@@ -318,10 +318,6 @@ class ClampedHeader(QHeaderView):
         self.setHighlightSections(True)
         self.sectionResized.connect(self._on_section_resized)
 
-    # ------------------------------------------------------------------
-    # helpers
-    # ------------------------------------------------------------------
-
     def _viewport_w(self) -> int:
         p = self.parentWidget()
         if p is not None and hasattr(p, "viewport"):
@@ -332,7 +328,6 @@ class ClampedHeader(QHeaderView):
         return self._min_w[col] if col < len(self._min_w) else 40
 
     def _next_visible(self, after: int) -> int:
-        """Zwraca indeks pierwszej nieukrytej kolumny po 'after', lub -1."""
         i = after + 1
         while i < self.count():
             if not self.isSectionHidden(i):
@@ -340,23 +335,14 @@ class ClampedHeader(QHeaderView):
             i += 1
         return -1
 
-    # ------------------------------------------------------------------
-    # squeeze: gdy col rośnie, kurczy col+1 (i dalej jeśli trzeba)
-    # ------------------------------------------------------------------
-
     def _on_section_resized(self, col: int, old_size: int, new_size: int) -> None:
         if self._guard or self.count() == 0:
             return
-
         delta = new_size - old_size
         if delta == 0:
             return
-
         squeeze_col = self._next_visible(col)
-
         if squeeze_col == -1:
-            # Ostatnia kolumna — nie ma sąsiada do skurczenia.
-            # Każdy wzrost jest bezpośrednio blokowany.
             if delta > 0:
                 self._guard = True
                 try:
@@ -364,16 +350,12 @@ class ClampedHeader(QHeaderView):
                 finally:
                     self._guard = False
             return
-
         sq_current = self.sectionSize(squeeze_col)
         sq_min = self._min(squeeze_col)
         available_squeeze = sq_current - sq_min
-
         if delta > 0:
-            # Kolumna rośnie — kurczymy squeeze_col
             actual_squeeze = min(delta, available_squeeze)
             if actual_squeeze < delta:
-                # squeeze_col już na minimum — ogranicz wzrost col
                 allowed_delta = actual_squeeze
                 self._guard = True
                 try:
@@ -389,16 +371,11 @@ class ClampedHeader(QHeaderView):
                 finally:
                     self._guard = False
         else:
-            # Kolumna maleje — rozszerz squeeze_col o |delta|
             self._guard = True
             try:
-                self.resizeSection(squeeze_col, sq_current - delta)  # delta < 0, więc +|delta|
+                self.resizeSection(squeeze_col, sq_current - delta)
             finally:
                 self._guard = False
-
-    # ------------------------------------------------------------------
-    # rebalance: po zakończeniu drag wyrównaj ostatnią kolumnę do viewportu
-    # ------------------------------------------------------------------
 
     def _rebalance(self) -> None:
         if self._guard or self.count() == 0:
@@ -423,7 +400,6 @@ class ClampedHeader(QHeaderView):
         super().mouseReleaseEvent(event)
         self._rebalance()
 
-    # Rebalance też przy zmianie rozmiaru headera (np. resize okna)
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
         QtCore.QTimer.singleShot(0, self._rebalance)
@@ -608,7 +584,6 @@ class WatermarkWorker(QtCore.QThread):
 
         result, elapsed = scan_video(vp)
         sig = extract_signals(result)
-
         c2pa_sig = detect_c2pa_signal(vp)
 
         det, score, mode, ai_specific, broadcast_trap = fuse(
@@ -651,7 +626,6 @@ class WatermarkWorker(QtCore.QThread):
         )
 
         watermark_count = 1 if det == 1 else 0
-        status = "AI DETECTED" if det == 1 else "AI CLEAR"
         c2pa_result = {
             "found": bool(c2pa_sig.get("c2pa_found")),
             "has_c2pa": bool(c2pa_sig.get("c2pa_found")),
@@ -660,7 +634,7 @@ class WatermarkWorker(QtCore.QThread):
         }
 
         return {
-            "status": status,
+            "status": "AI DETECTED" if det == 1 else "AI CLEAR",
             "watermark_count": watermark_count,
             "watermark_types": [f"fusion_score={score:.2f}"] if det else [],
             "full_path": os.path.abspath(path),
@@ -671,7 +645,6 @@ class WatermarkWorker(QtCore.QThread):
             "ai_specific": ai_specific,
             "broadcast_trap": broadcast_trap,
             "elapsed": elapsed,
-            # sygnały surowe dla tooltipu / logu
             "signals": sig,
         }
 
@@ -695,9 +668,7 @@ class WatermarkWorker(QtCore.QThread):
                 self.file_started.emit(global_idx, fname, total_frames)
                 self.log_line.emit(
                     f"[{local_idx+1}/{len(self._files)}] Analizuję: {fname} "
-                    f"(Conf: {self._confidence}, Sample: {self._sample_rate}, "
-                    f"Detailed: {self._detailed_scan}, "
-                    f"Pipeline: {'evaluate' if EVALUATE_AVAILABLE else 'ocr_detector'})"
+                    f"(Pipeline: {'evaluate' if EVALUATE_AVAILABLE else 'ocr_detector'})"
                 )
 
                 file_start_t = time.monotonic()
@@ -851,7 +822,7 @@ class MainWindow(QMainWindow):
         self.btn_pick_folder.clicked.connect(self.pick_folder)
         top.addWidget(self.btn_pick_folder)
 
-        self.grp_opts = QGroupBox("Parametry OCR (Watermark)")
+        self.grp_opts = QGroupBox("Parametry analizy")
         opts_lay = QVBoxLayout(self.grp_opts)
         opts_lay.setContentsMargins(8, 4, 8, 4)
         param_lay = QFormLayout()
@@ -941,7 +912,6 @@ class MainWindow(QMainWindow):
             "Plik", "Typ", "Status AI", "% AI w wideo", "C2PA", "Raport CSV"
         ])
 
-        # ── ClampedHeader — squeeze-resize, suma kolumn === viewport ──
         clamped_hh = ClampedHeader(
             Qt.Orientation.Horizontal,
             _COL_MIN_WIDTHS,
@@ -951,7 +921,6 @@ class MainWindow(QMainWindow):
         self.table_results.setHorizontalHeader(clamped_hh)
         clamped_hh.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
-        # Poziomy scrollbar wyłączony — kolumny nie wychodzą poza viewport
         self.table_results.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -1051,22 +1020,15 @@ class MainWindow(QMainWindow):
         self.status = self.statusBar()
         self._apply_theme(True)
 
+        # Fallback warmup — tylko gdy evaluate.py niedostępny
         if not EVALUATE_AVAILABLE and ocr_detector is not None:
             QtCore.QTimer.singleShot(500, self._warmup_ocr)
-
-    # ----------------------------------------------------------------
-    # showEvent: dopiero tu okno ma prawdziwa geometrie
-    # ----------------------------------------------------------------
 
     def showEvent(self, event):
         super().showEvent(event)
         if not self._splitters_initialized:
             self._splitters_initialized = True
             self._restore_splitters()
-
-    # ----------------------------------------------------------------
-    # Zapis / odczyt pozycji splitterow i szerokosci kolumn
-    # ----------------------------------------------------------------
 
     def _restore_splitters(self):
         total_w = self.main_splitter.width()
@@ -1122,8 +1084,6 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._save_splitters()
         super().closeEvent(event)
-
-    # ----------------------------------------------------------------
 
     def _warmup_ocr(self):
         import threading
@@ -1387,7 +1347,6 @@ class MainWindow(QMainWindow):
         total_frames = details.get("total_frames", 0) or 0
         sampled = max(1, total_frames // max(1, self.spin_sample.value())) if total_frames > 0 else 1
 
-        # Wynik z evaluate pipeline
         fusion_score = details.get("fusion_score")
         ai_specific = details.get("ai_specific", None)
         broadcast_trap = details.get("broadcast_trap", None)
@@ -1402,7 +1361,6 @@ class MainWindow(QMainWindow):
             si.setForeground(QtGui.QBrush(QtGui.QColor("#a6e3a1")))
         si.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Tooltip ze szczegółami evaluate jeśli dostępne
         if fusion_score is not None:
             tip_parts = [f"fusion_score={fusion_score:.3f}"]
             if ai_specific is not None:
@@ -1427,8 +1385,6 @@ class MainWindow(QMainWindow):
                 QtGui.QColor("#f38ba8") if ai_pct >= 50 else QtGui.QColor("#fab387")
             ))
         elif fusion_score is not None:
-            # Wynik z evaluate — pokazuj fusion_score jako procent
-            pct = min(100.0, max(0.0, float(fusion_score) * 20))  # score 0-5 -> 0-100%
             if count > 0:
                 pi = QTableWidgetItem(f"🔴 score={fusion_score:.2f}")
                 pi.setForeground(QtGui.QBrush(QtGui.QColor("#f38ba8")))
