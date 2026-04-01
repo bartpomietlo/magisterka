@@ -355,21 +355,13 @@ class ClampedHeader(QHeaderView):
         available_squeeze = sq_current - sq_min
         if delta > 0:
             actual_squeeze = min(delta, available_squeeze)
-            if actual_squeeze < delta:
-                allowed_delta = actual_squeeze
-                self._guard = True
-                try:
-                    self.resizeSection(col, old_size + allowed_delta)
-                    if allowed_delta > 0:
-                        self.resizeSection(squeeze_col, sq_min)
-                finally:
-                    self._guard = False
-            else:
-                self._guard = True
-                try:
-                    self.resizeSection(squeeze_col, sq_current - delta)
-                finally:
-                    self._guard = False
+            allowed_delta = actual_squeeze
+            self._guard = True
+            try:
+                self.resizeSection(col, old_size + allowed_delta)
+                self.resizeSection(squeeze_col, max(sq_min, sq_current - allowed_delta))
+            finally:
+                self._guard = False
         else:
             self._guard = True
             try:
