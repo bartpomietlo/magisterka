@@ -295,27 +295,23 @@ class GripSplitter(QSplitter):
 
 class ClampedHeader(QHeaderView):
     """
-    QHeaderView z twardym ograniczeniem szerokości kolumn do viewportu tabeli.
+    QHeaderView z twardym ograniczeniem sumy szerokości kolumn do viewportu.
 
-    Zasada działania:
-    - Suma szerokości wszystkich kolumn NIGDY nie może przekroczyć szerokości
-      viewportu — przez co nie pojawia się poziomy pasek przewijania i nie można
-      „wyciągnąć" kolumny poza prawą pionową kreską tabeli.
-    - Każda kolumna ma zdefiniowaną minimalną szerokość (_COL_MIN_WIDTHS).
-    - Przy resize kolumny i: max dozwolona szerokość = viewport - suma min-width
-      pozostałych kolumn. Dzięki temu każda kolumna zawsze zachowuje swoje
-      minimum, a drag zatrzymuje się dokładnie przy granicy sąsiedniej kolumny.
-    - Po zwolnieniu myszy (_on_mouse_release) ostatnia kolumna jest
-      automatycznie dostosowywana do dokładnego wypełnienia reszty viewportu
-      (eliminuje puste miejsce lub overflow po zmianie rozmiaru okna).
-    - _guard zapobiega rekurencji: clamp wywołuje resizeSection → sygnał →
-      _on_section_resized → clamp → ...
+    Mechanizm squeeze-resize:
+    - Gdy kolumna col rośnie o delta, natychmiast kurczymy następną kolumnę
+      (col+1) o tę samą deltę — suma pozostaje stała i równa viewportowi.
+    - Jeśli następna kolumna osiągnęła minimum, squeeze jest blokowany
+      i kolumna col nie może już rosnąć (twarde ograniczenie).
+    - Po zwolnieniu myszy _rebalance() wyrównuje ostatnią kolumnę tak,
+      żeby suma === viewport (naprawia drobne rozbieżności po resize okna).
+    - _guard zapobiega rekurencji przy programowym wywołaniu resizeSection.
     """
 
     def __init__(self, orientation, min_widths: list[int], parent=None):
         super().__init__(orientation, parent)
         self._min_w = min_widths
         self._guard = False
+        self._prev_sizes: list[int] = []
         self.setSectionsMovable(False)
         self.setSectionsClickable(True)
         self.setHighlightSections(True)
@@ -326,7 +322,6 @@ class ClampedHeader(QHeaderView):
     # ------------------------------------------------------------------
 
     def _viewport_w(self) -> int:
-        """Szerokość viewportu tabeli-rodzica (faktyczny dostępny obszar)."""
         p = self.parentWidget()
         if p is not None and hasattr(p, "viewport"):
             return p.viewport().width()
@@ -335,53 +330,83 @@ class ClampedHeader(QHeaderView):
     def _min(self, col: int) -> int:
         return self._min_w[col] if col < len(self._min_w) else 40
 
-    def _max_for_col(self, col: int) -> int:
-        """
-        Maksymalna szerokość kolumny `col` = viewport - suma minimalnych
-        szerokości wszystkich pozostałych kolumn.
-        Gwarantuje, że każda inna kolumna zawsze zmieści swoje minimum.
-        """
+    def _sizes(self) -> list[int]:
+        return [self.sectionSize(i) for i in range(self.count())]
+
+    # ------------------------------------------------------------------
+    # squeeze: gdy col rośnie, kurczy col+1 (i dalej jeśli trzeba)
+    # ------------------------------------------------------------------
+
+    def _on_section_resized(self, col: int, old_size: int, new_size: int) -> None:
+        if self._guard or self.count() == 0:
+            return
+
+        delta = new_size - old_size
+        if delta == 0:
+            return
+
+        # Szukamy kolumny do squeeze — następna nieukryta po col
+        squeeze_col = col + 1
+        while squeeze_col < self.count() and self.isSectionHidden(squeeze_col):
+            squeeze_col += 1
+
+        if squeeze_col >= self.count():
+            # Nie ma sąsiada — cofnij zmianę, żeby nie przekroczyć viewportu
+            vw = self._viewport_w()
+            current_sum = sum(self._sizes())
+            if current_sum > vw:
+                clamped = max(self._min(col), new_size - (current_sum - vw))
+                self._guard = True
+                try:
+                    self.resizeSection(col, clamped)
+                finally:
+                    self._guard = False
+            return
+
+        sq_current = self.sectionSize(squeeze_col)
+        sq_min = self._min(squeeze_col)
+        available_squeeze = sq_current - sq_min
+
+        if delta > 0:
+            # Kolumna rośnie — kurczymy squeeze_col
+            actual_squeeze = min(delta, available_squeeze)
+            if actual_squeeze < delta:
+                # squeeze_col już na minimum — ogranicz wzrost col
+                allowed_delta = actual_squeeze
+                self._guard = True
+                try:
+                    self.resizeSection(col, old_size + allowed_delta)
+                    if allowed_delta > 0:
+                        self.resizeSection(squeeze_col, sq_min)
+                finally:
+                    self._guard = False
+            else:
+                self._guard = True
+                try:
+                    self.resizeSection(squeeze_col, sq_current - delta)
+                finally:
+                    self._guard = False
+        else:
+            # Kolumna maleje — rozszerz squeeze_col o |delta|
+            self._guard = True
+            try:
+                self.resizeSection(squeeze_col, sq_current - delta)  # delta < 0, więc +|delta|
+            finally:
+                self._guard = False
+
+    # ------------------------------------------------------------------
+    # rebalance: po zakończeniu drag wyrównaj ostatnią kolumnę do viewportu
+    # ------------------------------------------------------------------
+
+    def _rebalance(self) -> None:
+        if self._guard or self.count() == 0:
+            return
         vw = self._viewport_w()
         if vw <= 0:
-            return 9999
-        other_min_sum = sum(
-            self._min(i) for i in range(self.count()) if i != col
-        )
-        return max(self._min(col), vw - other_min_sum)
-
-    # ------------------------------------------------------------------
-    # główny clamp — wywoływany przez sygnał sectionResized
-    # ------------------------------------------------------------------
-
-    def _on_section_resized(self, col: int, _old: int, new_size: int) -> None:
-        if self._guard:
-            return
-        mn = self._min(col)
-        mx = self._max_for_col(col)
-        clamped = max(mn, min(mx, new_size))
-        if clamped == new_size:
-            return
-        self._guard = True
-        try:
-            self.resizeSection(col, clamped)
-        finally:
-            self._guard = False
-
-    # ------------------------------------------------------------------
-    # wyrównanie po zakończeniu drag — wypełnij resztę ostatnią kolumną
-    # ------------------------------------------------------------------
-
-    def _fill_last_column(self) -> None:
-        """
-        Dopasowuje ostatnią kolumnę tak, żeby suma szerokości = viewport.
-        Efekt: brak pustej szarej przestrzeni i brak overflow.
-        """
-        if self._guard:
-            return
-        vw = self._viewport_w()
-        if vw <= 0 or self.count() == 0:
             return
         last = self.count() - 1
+        while last > 0 and self.isSectionHidden(last):
+            last -= 1
         other_sum = sum(self.sectionSize(i) for i in range(last))
         desired = max(self._min(last), vw - other_sum)
         if desired == self.sectionSize(last):
@@ -392,31 +417,14 @@ class ClampedHeader(QHeaderView):
         finally:
             self._guard = False
 
-    # ------------------------------------------------------------------
-    # mouse events — dodatkowe zabezpieczenie w trakcie drag
-    # ------------------------------------------------------------------
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        super().mouseMoveEvent(event)
-        # Clamp w trakcie drag — blokuje przekroczenie granicy jeszcze przed
-        # mouseRelease, dzięki czemu kursor nie "ucieka" za viewport.
-        if self._guard:
-            return
-        for col in range(self.count()):
-            w = self.sectionSize(col)
-            mx = self._max_for_col(col)
-            mn = self._min(col)
-            clamped = max(mn, min(mx, w))
-            if clamped != w:
-                self._guard = True
-                try:
-                    self.resizeSection(col, clamped)
-                finally:
-                    self._guard = False
-
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         super().mouseReleaseEvent(event)
-        self._fill_last_column()
+        self._rebalance()
+
+    # Rebalance też przy zmianie rozmiaru headera (np. resize okna)
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        QtCore.QTimer.singleShot(0, self._rebalance)
 
 
 # ======================== Drop Overlay ========================
@@ -931,7 +939,7 @@ class MainWindow(QMainWindow):
             "Plik", "Typ", "Status AI", "% AI w wideo", "C2PA", "Raport CSV"
         ])
 
-        # ── ClampedHeader — twardy clamp do viewportu, bez _COL_MAX_WIDTHS ──
+        # ── ClampedHeader — squeeze-resize, suma kolumn === viewport ──
         clamped_hh = ClampedHeader(
             Qt.Orientation.Horizontal,
             _COL_MIN_WIDTHS,
