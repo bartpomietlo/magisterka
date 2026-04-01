@@ -1,6 +1,13 @@
 \chapter{Narz\k{e}dzia i~metody detekcji}
 \label{ch:narzedzia}
 
+% Globalne ustawienia dla tabel w tym rozdziale
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.3}
+
+% Nowy typ kolumny z zawijaniem tekstu i RaggedRight
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+
 \section{Zbi\'{o}r danych testowych}
 \label{sec:zbior_danych}
 
@@ -16,27 +23,27 @@ Tabela~\ref{tab:dataset} prezentuje sk\l{}ad zbioru wed\l{}ug kategorii.
 \caption{Sk\l{}ad zbioru testowego wed\l{}ug kategorii}
 \label{tab:dataset}
 \small
-\begin{tabular}{|l|c|l|}
-\hline
+\begin{tabular}{lcc}
+\toprule
 \textbf{Kategoria} & \textbf{Liczba} & \textbf{\'{Z}r\'{o}d\l{}o / Model} \\
-\hline
-Syntetyczne -- Runway Gen-3 & 11 & Runway Gen-3 \\
-Syntetyczne -- Runway Gen-4 Turbo & 5 & Runway Gen-4 Turbo \\
-Syntetyczne -- Runway Gen-4.5 & 2 & Runway Gen-4.5 \\
-Syntetyczne -- OpenAI Sora & 5 & OpenAI Sora \\
-Syntetyczne -- Luma Dream Machine & 3 & Luma Dream Machine \\
-Syntetyczne -- Kling AI & 6 & Kling AI \\
-Syntetyczne -- Pika Labs & 2 & Pika Labs \\
-Syntetyczne -- Grok (xAI) & 3 & Grok \\
-Syntetyczne -- inne modele AI & 4 & r\'{o}\.{z}ne \\
-\hline
-\textit{Razem syntetyczne} & \textit{41} & \\
-\hline
-Autentyczne (klasa negatywna) & 3 & nagrania kamerowe \\
-Materia\l{}y kontrolne (corner cases) & 7 & reklamy, recenzje aplikacji \\
-\hline
-\textbf{Razem} & \textbf{51} & \\
-\hline
+\midrule
+Syntetyczne --- Runway Gen-3     & 11 & Runway Gen-3 \\
+Syntetyczne --- Runway Gen-4 Turbo & 5 & Runway Gen-4 Turbo \\
+Syntetyczne --- Runway Gen-4.5   &  2 & Runway Gen-4.5 \\
+Syntetyczne --- OpenAI Sora      &  5 & OpenAI Sora \\
+Syntetyczne --- Luma Dream Machine &  3 & Luma Dream Machine \\
+Syntetyczne --- Kling AI         &  6 & Kling AI \\
+Syntetyczne --- Pika Labs        &  2 & Pika Labs \\
+Syntetyczne --- Grok (xAI)       &  3 & Grok \\
+Syntetyczne --- inne modele AI   &  4 & r\'{o}\.{z}ne \\
+\midrule
+\textit{Razem syntetyczne}       & \textit{41} & \\
+\midrule
+Autentyczne (klasa negatywna)    &  3 & nagrania kamerowe \\
+Materia\l{}y kontrolne (corner cases) &  7 & reklamy, recenzje aplikacji \\
+\midrule
+\textbf{Razem}                   & \textbf{51} & \\
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -83,15 +90,15 @@ Tabela~\ref{tab:detectvideo_summary} pokazuje rozk\l{}ad wynik\'{o}w.
 \caption{Rozk\l{}ad wynik\'{o}w DetectVideo.ai ($N=24$)}
 \label{tab:detectvideo_summary}
 \small
-\begin{tabular}{|l|c|l|}
-\hline
+\begin{tabular}{lcc}
+\toprule
 \textbf{Wynik AI likelihood} & \textbf{Liczba} & \textbf{Typy materia\l{}\'{o}w} \\
-\hline
+\midrule
 55\% (nierozstrzygni\k{e}ty) & 20 & syntetyczne, autentyczne, deepfake \\
-72\% (podejrzany) & 4 & abstrakcja, fantasy, zmanip.\ dokument \\
-\hline
+72\% (podejrzany)            &  4 & abstrakcja, fantasy, zmanip.\ dokument \\
+\midrule
 \textbf{Razem} & \textbf{24} & \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -137,20 +144,20 @@ wed\l{}ug kategorii materia\l{}u.
 \caption{Rozk\l{}ad wynik\'{o}w Undetectable.ai wed\l{}ug kategorii ($N=46$)}
 \label{tab:undetectable_summary}
 \small
-\begin{tabular}{|l|c|c|c|c|}
-\hline
+\begin{tabular}{lcccc}
+\toprule
 \textbf{Kategoria} &
 \textbf{AI-Gen.} &
 \textbf{AI elem.} &
 \textbf{Mostly auth.} &
 \textbf{Strong auth.} \\
-\hline
-Syntetyczne (38) & 30 & 3 & 4 & 1 \\
-Kontrola / corner cases (7) & 1 & 0 & 1 & 5 \\
-Autentyczne (1) & 0 & 0 & 0 & 1 \\
-\hline
+\midrule
+Syntetyczne (38)           & 30 & 3 & 4 & 1 \\
+Kontrola / corner cases (7) &  1 & 0 & 1 & 5 \\
+Autentyczne (1)             &  0 & 0 & 0 & 1 \\
+\midrule
 \textbf{Razem (46)} & \textbf{31} & \textbf{3} & \textbf{5} & \textbf{7} \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -218,19 +225,19 @@ klasyfikacji dla w\l{}asnego detektora i~serwisu AIVideoDetector.com.
 
 \begin{table}[H]
 \centering
-\caption{Por\'{o}wnanie metryk klasyfikacji -- $N=79$}
+\caption{Por\'{o}wnanie metryk klasyfikacji --- $N=79$}
 \label{tab:metryki_ogolne}
 \small
-\begin{tabular}{|l|c|c|}
-\hline
+\begin{tabular}{lcc}
+\toprule
 \textbf{Metryka} & \textbf{Nasz system} & \textbf{AIVideoDetector} \\
-\hline
-Accuracy & 78{,}9\% & 79{,}7\% \\
+\midrule
+Accuracy  & 78{,}9\% & 79{,}7\% \\
 Precision & \textbf{82{,}9\%} & 80{,}6\% \\
-Recall & 74{,}4\% & 76{,}3\% \\
-F1 & 78{,}4\% & 78{,}4\% \\
-FPR & \textbf{16{,}2\%} & 17{,}1\% \\
-\hline
+Recall    & 74{,}4\% & 76{,}3\% \\
+F1        & 78{,}4\% & 78{,}4\% \\
+FPR       & \textbf{16{,}2\%} & 17{,}1\% \\
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -252,29 +259,29 @@ uzyskuje nieznacznie wy\.{z}sz\k{a} Accuracy i~Recall.
 \caption{Por\'{o}wnanie komercyjnych narz\k{e}dzi detekcji wideo AI}
 \label{tab:porownanie_narzedzi}
 \small
-\begin{tabular}{|p{2.6cm}|p{5.6cm}|p{5.6cm}|}
-\hline
+\begin{tabular}{L{2.4cm}L{5.5cm}L{5.5cm}}
+\toprule
 \textbf{Narz\k{e}dzie} & \textbf{Zalety} & \textbf{Wady} \\
-\hline
+\midrule
 DetectVideo.ai &
 Prosty interfejs; bez rejestracji &
 83\% wynik\'{o}w nierozstrzygni\k{e}te (55\%);
 brak realnej analizy wizualnej;
 brak XAI \\
-\hline
+\addlinespace
 Undetectable.ai &
 Analiza wielokana\l{}owa (Image~+~Motion);
 czytelna skala 0--100;
 skuteczny dla modeli Gen-3 &
 B\l{}\k{e}dy na~fotorealistycznych i~statycznych scenach;
 limit dzienny; odrzucanie plik\'{o}w \\
-\hline
+\addlinespace
 AIVideoDetector.com &
 Skuteczno\'{s}\'{c} F1\,=\,78{,}4\%;
 przejrzysty wynik liczbowy &
-FPR\,=\,17{,}1\% -- fa\l{}szywe alarmy
+FPR\,=\,17{,}1\% --- fa\l{}szywe alarmy
 dla materia\l{}\'{o}w z~animowanymi naklejkami \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table}
 
