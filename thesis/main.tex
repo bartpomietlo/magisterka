@@ -1,0 +1,97 @@
+\documentclass[pl,12pt]{TAGH/t_agh_av}
+\usepackage{float}
+\usepackage{hyperref}
+\addbibresource{bibliography.bib}
+
+\author{Bart\l{}omiej Pomiet\l{}o}
+\shortauthor{B.P.}
+
+\titlePL{Analiza narz\k{e}dzi dla przeciwdzia\l{}ania dezinformacji w obszarze multimedi\'{o}w}
+\titleEN{Analysis of tools for countering disinformation in the field of multimedia}
+
+\shorttitlePL{Analiza narz\k{e}dzi przeciwdzia\l{}ania dezinformacji w multimediach}
+\shorttitleEN{Tools for countering multimedia disinformation}
+
+\thesistype{Praca Magisterska}
+\supervisor{dr~in\dot{z}. Jan Derkacz}
+\degreeprogramme{Cyberbezpiecze\'{n}stwo}
+
+\date{2026}
+\department{Katedra Telekomunikacji}
+\faculty{Wydzia\l{} Informatyki, Elektroniki i Telekomunikacji}
+
+\makeatletter
+\newcommand{\@acknowledgements}{}
+\makeatother
+
+\begin{document}
+\titlepages
+\selectlanguage{polish}
+
+% -------------------------------------------------------
+% ABSTRAKTY
+% -------------------------------------------------------
+\begin{abstract}
+% TODO: napisać streszczenie angielskie
+\end{abstract}
+
+\begin{abstract}
+% TODO: napisać streszczenie polskie
+\end{abstract}
+
+% -------------------------------------------------------
+% SPISY
+% -------------------------------------------------------
+\tableofcontents
+\clearpage
+
+\chapter*{Wykaz tabel}
+\addcontentsline{toc}{chapter}{Wykaz tabel}
+\renewcommand{\listtablename}{}
+\listoftables
+
+\chapter*{Wykaz rysunk\'{o}w}
+\addcontentsline{toc}{chapter}{Wykaz rysunk\'{o}w}
+\renewcommand{\listfigurename}{}
+\listoffigures
+
+% -------------------------------------------------------
+% WYKAZ SKRÓTÓW
+% -------------------------------------------------------
+\chapter*{Wykaz skr\'{o}t\'{o}w}
+\addcontentsline{toc}{chapter}{Wykaz skr\'{o}t\'{o}w}
+\begin{tabular}{ll}
+\textbf{AI}    & Artificial Intelligence (Sztuczna inteligencja) \\
+\textbf{AUC}   & Area Under the Curve \\
+\textbf{CNN}   & Convolutional Neural Network \\
+\textbf{DNN}   & Deep Neural Network \\
+\textbf{FFT}   & Fast Fourier Transform \\
+\textbf{FP}    & False Positive \\
+\textbf{FPR}   & False Positive Rate \\
+\textbf{FN}    & False Negative \\
+\textbf{GAN}   & Generative Adversarial Network \\
+\textbf{LLM}   & Large Language Model \\
+\textbf{ML}    & Machine Learning \\
+\textbf{OF}    & Optical Flow \\
+\textbf{TP}    & True Positive \\
+\textbf{TPR}   & True Positive Rate (Recall) \\
+\textbf{UE}    & Unia Europejska \\
+\textbf{ViT}   & Vision Transformer \\
+\end{tabular}
+
+% -------------------------------------------------------
+% ROZDZIAŁY
+% -------------------------------------------------------
+\include{chapters/01_wprowadzenie}
+\include{chapters/02_tlo_literaturowe}
+\include{chapters/03_zagrozenia_i_techniki}
+\include{chapters/04_narzedzia_i_metody}
+\include{chapters/05_implementacja_i_ewaluacja}
+\include{chapters/06_wnioski}
+
+% -------------------------------------------------------
+% BIBLIOGRAFIA
+% -------------------------------------------------------
+\printbibliography[heading=bibintoc, title={Bibliografia}]
+
+\end{document}
