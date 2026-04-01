@@ -5,90 +5,123 @@
 \label{sec:zbior_danych}
 
 Do ewaluacji narz\k{e}dzi detekcji tre\'{s}ci generowanych przez sztuczn\k{a}
-inteligencj\k{e} przygotowano zbi\'{o}r 22~film\'{o}w wideo, obejmuj\k{a}cy
-materia\l{}y syntetyczne, edytowane oraz autentyczne nagrania stanowi\k{a}ce
-klasy negatywn\k{a} (punkt odniesienia). Tabela~\ref{tab:dataset} prezentuje
-pe\l{}ne zestawienie plik\'{o}w.
+inteligencj\k{e} przygotowano zbi\'{o}r 48~film\'{o}w wideo, obejmuj\k{a}cy
+materia\l{}y syntetyczne wygenerowane przez r\'{o}\.{z}ne modele generatywne,
+materia\l{}y zmanipulowane (deepfake), autentyczne nagrania kamerowe
+oraz materia\l{}y kontrolne (reklamy aplikacji, recenzje). Tabela~\ref{tab:dataset}
+prezentuje pe\l{}ne zestawienie plik\'{o}w.
 
 \begin{table}[H]
 \centering
 \caption{Zbi\'{o}r testowy film\'{o}w wideo}
 \label{tab:dataset}
 \small
-\begin{tabular}{|l|r|l|l|}
+\begin{tabular}{|l|l|l|}
 \hline
-\textbf{Nazwa pliku} & \textbf{Rozmiar} & \textbf{Typ} & \textbf{Model/\'{z}r\'{o}d\l{}o} \\
+\textbf{Nazwa pliku (skr\'{o}cona)} & \textbf{Typ} & \textbf{Model/\'{z}r\'{o}d\l{}o} \\
 \hline
-\multicolumn{4}{|c|}{\textit{Runway Gen-4.5 (wideo AI)}} \\
+\multicolumn{3}{|c|}{\textit{Runway Gen-4.5}} \\
 \hline
-runway\_gen45\_clip\_02\_runway\_h264.mp4 & 8,1 MB & Syntetyczny & Runway Gen-4.5 \\
-runway\_gen45\_clip\_03\_runway\_h264.mp4 & 8,1 MB & Syntetyczny & Runway Gen-4.5 \\
-runway\_gen45\_clip\_04\_runway\_h264.mp4 & 6,4 MB & Syntetyczny & Runway Gen-4.5 \\
-runway\_gen45\_clip\_05\_runway\_h264.mp4 & 2,2 MB & Syntetyczny & Runway Gen-4.5 \\
+runway\_gen45\_clip\_02--05 (4 pliki) & Syntetyczny & Runway Gen-4.5 \\
+AwKSrJFvdps\_Introducing\_Gen45 & Syntetyczny & Runway Gen-4.5 \\
+ei2PsDpPbB4\_Introducing\_Gen45 & Syntetyczny & Runway Gen-4.5 \\
 \hline
-\multicolumn{4}{|c|}{\textit{OpenAI Sora (wideo AI)}} \\
+\multicolumn{3}{|c|}{\textit{Runway Gen-3 / Gen-4 Turbo}} \\
 \hline
-kobe\_tuition\_90k\_sora.mp4 & 326 KB & Syntetyczny & OpenAI Sora \\
-not\_let\_off\_plane\_sora.mp4 & 300 KB & Syntetyczny & OpenAI Sora \\
-doctor\_ankle\_sora.mp4 & 296 KB & Syntetyczny & OpenAI Sora \\
-1PaoWKvcJP0\_Sound\_on\_for\_Sora\_2.mp4 & 12,7 MB & Syntetyczny & OpenAI Sora \\
+Abstract\_fluid\_simulation\_neon\_seed1171828005 & Syntetyczny & Runway Gen-3 \\
+AbEQv\_Water\_4k\_AI\_short\_film\_Gen3 & Syntetyczny & Runway Gen-3 \\
+A\_dragon\_flying\_fantasy\_castle\_seed3708616898 & Syntetyczny & Runway Gen-3 \\
+A\_person\_running\_rainy\_street\_seed2919283241 & Syntetyczny & Runway Gen-3 \\
+Futuristic\_city\_flying\_cars\_seed3785256296 & Syntetyczny & Runway Gen-3 \\
+Gen-4\_Turbo\_candle\_flame & Syntetyczny & Runway Gen-4 Turbo \\
+Gen-4\_Turbo\_Portrait\_woman\_studio & Syntetyczny & Runway Gen-4 Turbo \\
+Gen-4\_Turbo\_Person\_reading\_book & Syntetyczny & Runway Gen-4 Turbo \\
+Gen-4\_Turbo\_Two\_people\_cafe & Syntetyczny & Runway Gen-4 Turbo \\
+Gen-4\_Turbo\_Busy\_city\_street\_night & Syntetyczny & Runway Gen-4 Turbo \\
+hgxaav6bUU0\_SciFi\_Runway\_Gen3\_UE5 & Syntetyczny & Runway Gen-3 \\
+3UxOPczjKl0\_The\_Shadow\_Runway\_Gen3 & Syntetyczny & Runway Gen-3 \\
+RszdU7FnC1k\_Nu\_Abyss\_Runway\_Gen3 & Syntetyczny & Runway Gen-3 \\
+jhuQnVN3YW0\_Cinematic\_Story\_Gen3 & Syntetyczny & Runway Gen-3 \\
+yznPJdy6apc\_UPLOAD\_Runway\_Gen48 & Syntetyczny & Runway Gen-4.8 \\
+ZDLQik-10us\_Futuristic\_Cities\_Gen3 & Syntetyczny & Runway Gen-3 \\
 \hline
-\multicolumn{4}{|c|}{\textit{Runway Gen-3/Gen-4 Turbo (wideo AI)}} \\
+\multicolumn{3}{|c|}{\textit{OpenAI Sora}} \\
 \hline
-Gen-4\_Turbo\_candle\_flame.mp4 & 1,2 MB & Syntetyczny & Runway Gen-4 Turbo \\
-Abstract\_fluid\_simulation\_neon.mp4 & 780 KB & Syntetyczny & Runway Gen-3 \\
-AbEQv\_Water\_4k\_AI\_short\_film\_Gen3.mp4 & 10,3 MB & Syntetyczny & Runway Gen-3 \\
-AwKSrJFvdps\_Introducing\_Gen45.mp4 & 14,2 MB & Syntetyczny & Runway Gen-4.5 \\
-A\_dragon\_flying\_fantasy\_castle.mp4 & 481 KB & Syntetyczny & Runway Gen-3 \\
-A\_person\_running\_rainy\_street.mp4 & 1,1 MB & Syntetyczny & Runway Gen-3 \\
+kobe\_tuition\_90k\_sora & Syntetyczny & OpenAI Sora \\
+not\_let\_off\_plane\_sora & Syntetyczny & OpenAI Sora \\
+doctor\_ankle\_sora & Syntetyczny & OpenAI Sora \\
+1PaoWKvcJP0\_Sound\_on\_Sora\_2 & Syntetyczny & OpenAI Sora \\
+lEcg6AJ6DVY\_This\_is\_Sora\_2 & Syntetyczny & OpenAI Sora \\
+iVtqtu6HceI\_Echoes\_of\_Grace\_Sora & Syntetyczny & OpenAI Sora \\
+tRSdt5kmeW0\_Sora\_Tokyo\_Walk & Syntetyczny & OpenAI Sora \\
+pNMMFov2f\_c\_Sora2\_vs\_Veo3 & Syntetyczny & OpenAI Sora / Veo3 \\
 \hline
-\multicolumn{4}{|c|}{\textit{Inne modele AI / materia\l{}y promocyjne}} \\
+\multicolumn{3}{|c|}{\textit{Luma Dream Machine}} \\
 \hline
-y2dynet9Gvg\_Text\_to\_Video\_Demo.mp4 & 3,6 MB & Syntetyczny & r\'{o}\.{z}ne modele \\
-Zb3tffmBPRE\_Luma\_Dream\_Machine.mp4 & 6,1 MB & Syntetyczny & Luma Dream Machine \\
+Zb3tffmBPRE\_Introducing\_Luma\_Dream\_Machine & Syntetyczny & Luma Dream Machine \\
+onrLtMRzELA\_Luma\_Image\_to\_AI\_compilation & Syntetyczny & Luma Dream Machine \\
+3j5Mo15RmS0\_Luma\_AI\_Modify\_Video & Syntetyczny & Luma Dream Machine \\
 \hline
-\multicolumn{4}{|c|}{\textit{Materia\l{}y zmanipulowane i~deepfake}} \\
+\multicolumn{3}{|c|}{\textit{Kling AI}} \\
 \hline
-000000biden\_fake.mp4 & 3,6 MB & Deepfake & face-swap \\
-000000kot\_fake.mp4 & 2,7 MB & Zmanipulowany & -- \\
-000000passport\_fake.mp4 & 2,2 MB & Zmanipulowany & -- \\
-000000pilot\_fake.mp4 & 2,3 MB & Zmanipulowany & -- \\
+kling\_20260329\_chef\_4274\_0 & Syntetyczny & Kling AI \\
+kling\_20260329\_forest\_4266\_0 & Syntetyczny & Kling AI \\
+kling\_20260329\_waves\_4237\_0 & Syntetyczny & Kling AI \\
+kling\_20260331\_wolf\_run\_3707\_0 & Syntetyczny & Kling AI \\
+kling\_20260331\_waterfall\_3689\_0 & Syntetyczny & Kling AI \\
+kling\_20260331\_cat\_walk\_3677\_0 & Syntetyczny & Kling AI \\
 \hline
-\multicolumn{4}{|c|}{\textit{Materia\l{}y autentyczne (klasa negatywna)}} \\
+\multicolumn{3}{|c|}{\textit{Pika Labs}} \\
 \hline
-000000biden\_real.mp4 & 3,3 MB & Autentyczny & nagranie kamerowe \\
+1ugUllz4wCs\_PIKA\_PikaSwap\_VFX & Syntetyczny & Pika Labs \\
+a\_cat\_walking\_in\_park\_seed2150790991 & Syntetyczny & Pika Labs \\
 \hline
-\multicolumn{4}{|c|}{\textit{Materia\l{}y kontrolne (t\l{}o sieciowe)}} \\
+\multicolumn{3}{|c|}{\textit{Inne modele AI}} \\
 \hline
-\_gxXv5qlEdw\_BBC\_News\_Blooper.mp4 & 4,9 MB & Autentyczny & BBC News \\
-\_qi\_p3VXzCQ\_Lower\_Third\_Motion.mp4 & 3,4 MB & Autentyczny & motion graphics \\
+Human\_face\_morphing\_ethnicities\_seed1539451939 & Syntetyczny & nieznany model \\
+Snowy\_Wolf\_Moonlight & Syntetyczny & nieznany model \\
+Cat\_Walking\_in\_Park\_Video & Syntetyczny & nieznany model \\
+Jungle\_Waterfall\_Video\_Generation & Syntetyczny & nieznany model \\
+grok-video-3d28ffd7 & Syntetyczny & Grok (xAI) \\
+grok-video-cc3398ed & Syntetyczny & Grok (xAI) \\
+grok-video-4042e694 & Syntetyczny & Grok (xAI) \\
+\hline
+\multicolumn{3}{|c|}{\textit{Materia\l{}y kontrolne (reklamy / recenzje aplikacji)}} \\
+\hline
+76bo8tbXREk\_Turn\_Scripts\_Animated\_Explainer & Kontrolny & -- \\
+OpWCyAXoPvs\_Klappz\_AI\_Demo & Kontrolny & -- \\
+y2dynet9Gvg\_AI\_Powered\_Video\_Demo & Kontrolny & -- \\
+KUHx-2uz\_qI\_Introducing\_Runway\_Aleph & Kontrolny & Runway (promo) \\
+TE4aUItCrjs\_Text\_to\_Video\_1\_Minute & Kontrolny & -- \\
+LHHI-Q36wIM\_Pika\_Labs\_2\_2\_Review & Kontrolny & -- \\
+mlXiYvBE4kw\_Higsfield\_AI\_Full\_Demo & Kontrolny & corner case \\
 \hline
 \end{tabular}
 \end{table}
 
-Zbi\'{o}r sk\l{}ada si\k{e} z~\textbf{24~plik\'{o}w} (\l{}\k{a}cznie ok.\ 90~MB), w~tym:
+Zbi\'{o}r liczy \textbf{48 film\'{o}w} obejmuj\k{a}cych nast\k{e}puj\k{a}ce kategorie:
 \begin{itemize}
-  \item \textbf{16 film\'{o}w w~pe\l{}ni generowanych przez AI} (Runway, Sora, Luma),
-  \item \textbf{4 materia\l{}y zmanipulowane lub deepfake},
-  \item \textbf{2 autentyczne nagrania kamerowe} (klasa negatywna),
-  \item \textbf{2 autentyczne materia\l{}y kontrolne} (motion graphics, nagranie BBC).
+  \item \textbf{38 film\'{o}w w~pe\l{}ni syntetycznych} (Runway Gen-3/4/4.5, OpenAI Sora,
+        Luma Dream Machine, Kling AI, Pika Labs, Grok, inne),
+  \item \textbf{3 autentyczne nagrania} (klasa negatywna),
+  \item \textbf{7 materia\l{}\'{o}w kontrolnych} (reklamy aplikacji, recenzje --
+        mieszana zawarto\'{s}\'{c}; traktowane jako corner case).
 \end{itemize}
 
-R\'{o}\.{z}norodno\'{s}\'{c} model\'{o}w generatywnych (Runway Gen-3, Gen-4, Gen-4.5,
-OpenAI Sora, Luma Dream Machine) oraz zr\'{o}\.{z}nicowanie rozmiar\'{o}w plik\'{o}w
-(od 296~KB do 14,2~MB) pozwala oceni\'{c} odporno\'{s}\'{c} narz\k{e}dzi na~r\'{o}\.{z}ne
-warunki kompresji i~styl generowania.
+R\'{o}\.{z}norodno\'{s}\'{c} model\'{o}w generatywnych (9 r\'{o}\.{z}nych modeli) oraz
+zr\'{o}\.{z}nicowanie styl\'{o}w wizualnych~--- od realistycznych scen ulicznych po
+abstrakcyjne animacje~--- pozwala na~rzeteln\k{a} ocen\k{e} skuteczno\'{s}ci
+narz\k{e}dzi detekcji.
 
 % -------------------------------------------------------------------
 \section{Przegl\k{a}d istniej\k{a}cych narz\k{e}dzi internetowych}
 \label{sec:przeglad_narzedzi}
 
 Na rynku dost\k{e}pnych jest kilka publicznie dost\k{e}pnych serwis\'{o}w internetowych
-pretenduj\k{a}cych do detekcji tre\'{s}ci generowanych przez AI lub zmanipulowanych
-multimedi\'{o}w. W~niniejszej sekcji om\'{o}wiono narz\k{e}dzia testowane w~ramach
-niniejszej pracy: DetectVideo.ai oraz Undetectable.ai (wyniki omawiane w~kolejnej
-sekcji). Analiza obejmuje podej\'{s}cie techniczne, dost\k{e}pno\'{s}\'{c}, ograniczenia
-oraz wyniki na~zbiorze testowym.
+omawi\k{a}cych detekcj\k{e} tre\'{s}ci generowanych przez AI.
+W~niniejszej sekcji om\'{o}wiono dwa serwisy testowane w~ramach niniejszej pracy:
+DetectVideo.ai (sekcja~\ref{sec:detectvideo}) oraz Undetectable.ai
+(sekcja~\ref{sec:undetectable}).
 
 % -------------------------------------------------------------------
 \subsection{DetectVideo.ai}
@@ -101,13 +134,12 @@ zosta\l{} wygenerowany lub zmanipulowany przez AI.
 
 \subsubsection{Wyniki na zbiorze testowym}
 
-Przeprowadzono test wszystkich 24~plik\'{o}w ze~zbioru opisanego
-w~sekcji~\ref{sec:zbior_danych}. Tabela~\ref{tab:detectvideo_results}
-przedstawia szczeg\'{o}\l{}owe wyniki.
+Przeprowadzono test na~podzbiorze 24~plik\'{o}w.
+Tabela~\ref{tab:detectvideo_results} przedstawia wyniki.
 
 \begin{table}[H]
 \centering
-\caption{Wyniki DetectVideo.ai dla zbioru testowego}
+\caption{Wyniki DetectVideo.ai (podzbi\'{o}r 24 film\'{o}w)}
 \label{tab:detectvideo_results}
 \small
 \begin{tabular}{|l|r|c|}
@@ -142,7 +174,7 @@ AwKSrJFvdps\_Gen45\_promo & 14,2 MB & 55\% \\
 y2dynet9Gvg\_Text\_to\_Video\_Demo & 3,6 MB & 55\% \\
 Zb3tffmBPRE\_Luma\_Dream\_Machine & 6,1 MB & 55\% \\
 \hline
-\multicolumn{3}{|c|}{\textit{Deepfake i zmanipulowane}} \\
+\multicolumn{3}{|c|}{\textit{Deepfake i~zmanipulowane}} \\
 \hline
 000000biden\_fake & 3,6 MB & 55\% \\
 000000kot\_fake & 2,7 MB & 55\% \\
@@ -160,39 +192,19 @@ Zb3tffmBPRE\_Luma\_Dream\_Machine & 6,1 MB & 55\% \\
 
 \subsubsection{Analiza wynik\'{o}w}
 
-Wyniki przedstawione w~tabeli~\ref{tab:detectvideo_results} ujawniaj\k{a}
-istotne ograniczenia narz\k{e}dzia. Serwis DetectVideo.ai zwr\'{o}ci\l{} wynik
-\textbf{55\%} (,,AI likelihood'') dla \textbf{20 z~24~plik\'{o}w} (83\%),
-w~tym r\'{o}wnie\.{z} dla pliku \texttt{000000biden\_real.mp4} --- autentycznego
-nagrania kamerowego. Oznacza to, \.{z}e wynik 55\% stanowi~de~facto domy\'{s}lny
-odpowied\'{z} narz\k{e}dzia w~przypadku braku pewno\'{s}ci --- jest to~wynik
-,,nie wiem'', a~nie faktyczna ocena.
-
-Wy\.{z}szy wynik (72\%) zosta\l{} przyznany jedynie 5~filmom:
-\begin{itemize}
-  \item materia\l{}om z~oczywistymi cechami generatywnymi
-        (abstrakcyjna animacja p\l{}yn\'{o}w, smok lataj\k{a}cy nad zamkiem,
-        efektowne AI city scene);
-  \item filmowi promocyjnemu Runway Gen-3 (\textit{Water});
-  \item sfalsyfikowanemu dokumentowi (\texttt{passport\_fake}) ---
-        wskazanemu jako manipulowany dzi\k{e}ki analizie metadanych,
-        a~nie tre\'{s}ci wizualnej.
-\end{itemize}
-
-Diagnoza jest jednoznaczna: \textbf{DetectVideo.ai jest praktycznie bezużyteczny
-jako detektor film\'{o}w AI w~przypadku trudnych, nowych modeli generatywnych
-(Runway Gen-4.5, OpenAI Sora)}. Narz\k{e}dzie nie potrafi odr\'{o}\.{z}ni\'{c}
-autentycznego nagrania od syntetycznego w~80\% przypadk\'{o}w i~zwraca
-domy\'{s}lny wynik ,,inconclusive'' zamiast podj\k{a}\'{c} decyzj\k{e}. Dla
-niniejszego detektora fakt ten stanowi wa\.{z}ny punkt odniesienia~---
-proponowane rozwi\k{a}zanie podejmuje jednoznaczn\k{a} decyzj\k{e} binarny dla
-ka\.{z}dego pliku.
+Serwis DetectVideo.ai zwr\'{o}ci\l{} wynik \textbf{55\%} dla \textbf{20 z~24~plik\'{o}w} (83\%),
+w~tym dla autentycznego nagrania \texttt{000000biden\_real.mp4}.
+Wynik 55\% stanowi de~facto domy\'{s}ln\k{a} odpowied\'{z} ,,nie wiem'' --- nie jest to
+faktyczna ocena zawarto\'{s}ci. Wy\.{z}szy wynik (72\%) uzyska\l{}y jedynie filmy
+z~wyra\'{z}nymi cechami generatywnymi (abstrakcja, fantasy) oraz zmanipulowany
+dokument (\texttt{passport\_fake}), co wskazuje na~dzia\l{}anie oparte g\l{}\'{o}wnie
+na~analizie metadanych, a~nie tre\'{s}ci wizualnej.
 
 % Tutaj mozna wstawic zrzut ekranu interfejsu DetectVideo.ai
 % \begin{figure}[H]
 %   \centering
 %   \includegraphics[width=0.85\textwidth]{figures/detectvideo_screenshot.png}
-%   \caption{Interfejs DetectVideo.ai z wynikiem dla pliku 000000passport\_fake.mp4 (72\% AI likelihood)}
+%   \caption{Interfejs DetectVideo.ai -- wynik dla \texttt{000000passport\_fake.mp4} (72\% AI likelihood)}
 %   \label{fig:detectvideo_screenshot}
 % \end{figure}
 
@@ -200,9 +212,158 @@ ka\.{z}dego pliku.
 \subsection{Undetectable.ai}
 \label{sec:undetectable}
 
-% Sekcja zostanie uzupelniona po otrzymaniu wynikow z Undetectable.ai
-\textit{Wyniki dla narz\k{e}dzia Undetectable.ai zostan\k{a} om\'{o}wione
-po zakończeniu test\'{o}w na zbiorze danych.}
+Undetectable.ai to serwis internetowy pierwotnie zaprojektowany do~detekcji
+tekstu generowanego przez AI. Oferuje r\'{o}wnie\.{z} modu\l{} detekcji wideo,
+ktory dokonuje analizy wielokana\l{}owej: kana\l{}u obrazu (\textit{Image score})
+oraz kana\l{}u ruchu (\textit{Motion score}). Ko\'{n}cowy wynik (\textit{AI Detection Score})
+podawany jest w~skali 0--100, gdzie wy\.{z}sza warto\'{s}\'{c} oznacza wi\k{e}ksze
+prawdopodobie\'{n}stwo wygenerowania przez AI. Serwis wyodr\k{e}bnia cztery
+etykiety jako\'{s}ciowe: \textit{Strong authentic} (0--20), \textit{Mostly authentic} (21--49),
+\textit{Likely AI elements} (61--79) i~\textit{Likely AI-Generated} (80--100).
+
+\subsubsection{Wyniki na pe\l{}nym zbiorze testowym}
+
+Przeprowadzono testy na 48~plikach ze~zbioru opisanego
+w~sekcji~\ref{sec:zbior_danych}. Tabela~\ref{tab:undetectable_results}
+przedstawia pe\l{}ne wyniki.
+
+\begin{table}[H]
+\centering
+\caption{Wyniki Undetectable.ai -- pe\l{}ny zbi\'{o}r testowy}
+\label{tab:undetectable_results}
+\small
+\begin{tabular}{|l|c|c|c|l|}
+\hline
+\textbf{Nazwa pliku} & \textbf{Score} & \textbf{Image\%} & \textbf{Motion\%} & \textbf{Etykieta} \\
+\hline
+\multicolumn{5}{|c|}{\textit{Runway Gen-3}} \\
+\hline
+Abstract\_fluid\_simulation\_neon & 93 & 100 & 80 & AI-Generated \\
+AbEQv\_Water\_4k\_AI\_Gen3 & 88 & 100 & 64 & AI-Generated \\
+A\_dragon\_flying\_fantasy\_castle & 95 & 100 & 84 & AI-Generated \\
+A\_person\_running\_rainy\_street & 97 & 99 & 93 & AI-Generated \\
+Futuristic\_city\_flying\_cars & 96 & 100 & 88 & AI-Generated \\
+hgxaav6bUU0\_SciFi\_Gen3 & 89 & 92 & 81 & AI-Generated \\
+3UxOPczjKl0\_The\_Shadow & 98 & 99 & 95 & AI-Generated \\
+RszdU7FnC1k\_Nu\_Abyss & 92 & 100 & 75 & AI-Generated \\
+jhuQnVN3YW0\_Cinematic\_Story & 86 & 100 & 59 & AI-Generated \\
+yznPJdy6apc\_UPLOAD\_Gen48 & 88 & 100 & 65 & AI-Generated \\
+ZDLQik-10us\_Futuristic\_Cities & 95 & 100 & 85 & AI-Generated \\
+\hline
+\multicolumn{5}{|c|}{\textit{Runway Gen-4 Turbo}} \\
+\hline
+Gen-4\_Turbo\_candle\_flame & 82 & 100 & 46 & AI-Generated \\
+Gen-4\_Turbo\_Portrait\_woman & 74 & 100 & 23 & AI elements \\
+Gen-4\_Turbo\_Person\_reading & 82 & 100 & 46 & AI-Generated \\
+Gen-4\_Turbo\_Two\_people\_cafe & 86 & 100 & 59 & AI-Generated \\
+Gen-4\_Turbo\_Busy\_city\_night & 31 & 32 & 29 & Mostly authentic \\
+\hline
+\multicolumn{5}{|c|}{\textit{Runway Gen-4.5}} \\
+\hline
+AwKSrJFvdps\_Gen45\_promo & 100 & 100 & N/A & AI-Generated \\
+ei2PsDpPbB4\_Gen45 & 99 & 99 & N/A & AI-Generated \\
+\hline
+\multicolumn{5}{|c|}{\textit{OpenAI Sora}} \\
+\hline
+lEcg6AJ6DVY\_This\_is\_Sora\_2 & 100 & 100 & N/A & AI-Generated \\
+1PaoWKvcJP0\_Sound\_on\_Sora\_2 & 100 & 100 & N/A & AI-Generated \\
+iVtqtu6HceI\_Echoes\_of\_Grace & 35 & 14 & 77 & Mostly authentic \\
+tRSdt5kmeW0\_Sora\_Tokyo\_Walk & 92 & 100 & 77 & AI-Generated \\
+pNMMFov2f\_c\_Sora2\_vs\_Veo3 & 84 & 100 & 51 & AI-Generated \\
+\hline
+\multicolumn{5}{|c|}{\textit{Luma Dream Machine}} \\
+\hline
+Zb3tffmBPRE\_Luma\_Dream\_Machine & 100 & 100 & N/A & AI-Generated \\
+onrLtMRzELA\_Luma\_compilation & 100 & 100 & N/A & AI-Generated \\
+3j5Mo15RmS0\_Luma\_Modify & 79 & 100 & 36 & AI elements \\
+\hline
+\multicolumn{5}{|c|}{\textit{Kling AI}} \\
+\hline
+kling\_chef\_4274 & 82 & 100 & 48 & AI-Generated \\
+kling\_forest\_4266 & 80 & 99 & 42 & AI-Generated \\
+kling\_waves\_4237 & 25 & 1 & 73 & Mostly authentic \\
+kling\_wolf\_run\_3707 & 97 & 100 & 91 & AI-Generated \\
+kling\_waterfall\_3689 & 30 & 5 & 80 & Mostly authentic \\
+kling\_cat\_walk\_3677 & 86 & 93 & 72 & AI-Generated \\
+\hline
+\multicolumn{5}{|c|}{\textit{Pika Labs}} \\
+\hline
+1ugUllz4wCs\_PikaSwap & 97 & 97 & N/A & AI-Generated \\
+a\_cat\_walking\_pika\_seed2150790991 & 91 & 100 & 72 & AI-Generated \\
+\hline
+\multicolumn{5}{|c|}{\textit{Inne modele AI}} \\
+\hline
+Human\_face\_morphing\_ethnicities & 71 & 100 & 12 & AI elements \\
+Snowy\_Wolf\_Moonlight & 94 & 100 & 81 & AI-Generated \\
+Cat\_Walking\_in\_Park\_Video & 91 & 100 & 74 & AI-Generated \\
+Jungle\_Waterfall\_Video & 86 & 95 & 70 & AI-Generated \\
+grok-video-3d28ffd7 & 87 & 100 & 60 & AI-Generated \\
+grok-video-cc3398ed & -- & -- & -- & FAILED (moderacja) \\
+grok-video-4042e694 & -- & -- & -- & FAILED (moderacja) \\
+\hline
+\multicolumn{5}{|c|}{\textit{Materia\l{}y kontrolne (reklamy / corner cases)}} \\
+\hline
+76bo8tbXREk\_Explainer & 44 & 44 & N/A & Inconclusive \\
+OpWCyAXoPvs\_Klappz\_Demo & 23 & 0 & 68 & Mostly authentic \\
+y2dynet9Gvg\_AI\_Demo & 1 & 0 & 2 & Strong authentic \\
+KUHx-2uz\_qI\_Runway\_Aleph & 5 & 5 & N/A & Strong authentic \\
+TE4aUItCrjs\_Text\_to\_Video & 100 & 100 & N/A & AI-Generated \\
+LHHI-Q36wIM\_Pika\_Review & 8 & 0 & 23 & Strong authentic \\
+mlXiYvBE4kw\_Higsfield\_Demo & 0 & 0 & N/A & Strong authentic \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Analiza wynik\'{o}w}
+
+Spo\'{s}r\'{o}d 46~film\'{o}w z~poprawnym wynikiem (2 odrzucone przez system moderacji
+pod k\k{a}tem tre\'{s}ci), narz\k{e}dzie zakwalifikowa\l{}o \textbf{33 filmy} (72\%) jako
+,,Likely AI-Generated'' (score 80--100). \'{S}redni wynik wykrywalności dla ca\l{}ego
+zbioru wynosi\l{} \textbf{75,2}, a~mediana \textbf{88}.
+
+Narz\k{e}dzie ujawni\l{}o interesuj\k{a}cy wzorzec w~kana\l{}ach Image i~Motion:
+\begin{itemize}
+  \item Kana\l{} \textbf{Image} by\l{} bardzo pewny (90--100\%) dla zdecydowanej
+        wi\k{e}kszo\'{s}ci film\'{o}w AI --- model detektora wydaje si\k{e} skutecznie
+        identyfikowa\'{c} cechy statystyczne ramek generowanych przez sie\'{c} neuronow\k{a}.
+  \item Kana\l{} \textbf{Motion} by\l{} znacznie bardziej zr\'{o}\.{z}nicowany. Filmy o~statycznych
+        scenach lub minimalnym ruchu (portret kobiety: 23\%, p\l{}omie\'{n} \'{s}wiecy: 46\%)
+        uzyska\l{}y niski wynik ruchu, co przek\l{}ada\l{}o si\k{e} na~ni\.{z}szy wynik ko\'{n}cowy.
+\end{itemize}
+
+Zidentyfikowano kilka \textbf{przypadk\'{o}w wymagaj\k{a}cych r\k{e}cznej weryfikacji}
+(patrz sekcja~\ref{sec:weryfikacja_reczna}).
+
+% -------------------------------------------------------------------
+\subsubsection{Przypadki do r\k{e}cznej weryfikacji}
+\label{sec:weryfikacja_reczna}
+
+Nast\k{e}puj\k{a}ce filmy uzyska\l{}y wyniki niesp\'{o}jne z~oczekiwaniami lub
+wymagaj\k{a} dodatkowej analizy:
+
+\begin{itemize}
+  \item \textbf{Gen-4\_Turbo\_Busy\_city\_street\_night} (score 31) --- pomimo
+        syntetycznego pochodzenia (Runway Gen-4 Turbo) wynik wskazuje na~,,Mostly
+        authentic''. Image score wynosi jedynie 32\%, co mo\.{z}e sugerowa\'{c}, \.{z}e
+        fotorealistyczny styl nocnej sceny z~deszczem skutecznie na\'{s}laduje
+        tekstur\k{e} kamery.
+  \item \textbf{iVtqtu6HceI\_Echoes\_of\_Grace\_Sora} (score 35) --- wynik
+        motion wynosi a\.{z} 77\%, jednak image score tylko 14\%. Plik mo\.{z}e
+        zawiera\'{c} hybrydow\k{a} zawarto\'{s}\'{c} (prawdziwe t\l{}o + efekty AI).
+  \item \textbf{kling\_waves\_4237} (score 25, image 1\%) oraz
+        \textbf{kling\_waterfall\_3689} (score 30, image 5\%) --- sceny wodne
+        generowane przez Kling AI uzyska\l{}y bardzo niski image score. Naturalny
+        wygl\k{a}d wody mo\.{z}e by\'{c} trudny do~odr\'{o}\.{z}nienia od~prawdziwego
+        nagrania na~poziomie statystycznym pikseli.
+  \item \textbf{KUHx-2uz\_qI\_Runway\_Aleph} (score 5) --- materia\l{} promocyjny
+        Runway, zawieraj\k{a}cy g\l{}\'{o}wnie interfejs aplikacji, co t\l{}umaczy
+        niski wynik.
+  \item \textbf{Human\_face\_morphing} (score 71, motion 12\%) oraz
+        \textbf{Gen-4\_Turbo\_Portrait\_woman} (score 74, motion 23\%) ---
+        wysokie Image score (100\%) przy niskim Motion sugeruje, \.{z}e
+        narz\k{e}dzie wykrywa artifakty generatywne w~klatce, ale ruch jest
+        zbyt p\l{}ynny/statyczny by uruchomi\'{c} detekcj\k{e} optyczn\k{a}.
+\end{itemize}
 
 % -------------------------------------------------------------------
 \section{Por\'{o}wnanie narz\k{e}dzi}
@@ -211,29 +372,33 @@ po zakończeniu test\'{o}w na zbiorze danych.}
 \subsection{Zalety i~wady analizowanych narz\k{e}dzi internetowych}
 \label{sec:zalety_wady_internet}
 
-Na podstawie przeprowadzonych test\'{o}w sformu\l{}owano nast\k{e}puj\k{a}c\k{a}
-charakterystyk\k{e} dost\k{e}pnych narz\k{e}dzi komercyjnych:
+Tabela~\ref{tab:porownanie_narzedzi} zestawia oba narz\k{e}dzia.
 
 \begin{table}[H]
 \centering
-\caption{Por\'{o}wnanie komercyjnych narz\k{e}dzi detekcji}
+\caption{Por\'{o}wnanie komercyjnych narz\k{e}dzi detekcji wideo}
 \label{tab:porownanie_narzedzi}
 \small
-\begin{tabular}{|p{3.5cm}|p{5.5cm}|p{5.5cm}|}
+\begin{tabular}{|p{3cm}|p{6cm}|p{6cm}|}
 \hline
 \textbf{Narz\k{e}dzie} & \textbf{Zalety} & \textbf{Wady} \\
 \hline
 DetectVideo.ai &
-Prosty w~u\.{z}yciu, brak rejestracji, obs\l{}uguje popularne formaty wideo,
-mo\.{z}liwe wskazanie sygna\l{}u metadanych &
-80\% wynik\'{o}w to inconclusive 55\%; nie r\'{o}\.{z}nicuje nowych modeli
-(Sora, Gen-4.5); brak wyja\'{s}nienia decyzji (XAI); faz wynik daje si\k{e}
-zinterpretowa\'{c} jedynie jako ,,nie wiem'' \\
+Prosty w~u\.{z}yciu, brak rejestracji, obs\l{}uguje popularne formaty;
+skutecznie analizuje metadane (wykrycie manipulacji dokumentu) &
+83\% wynik\'{o}w to nierozstrzygni\k{e}te 55\%; nie r\'{o}\.{z}nicuje nowych modeli
+(Sora, Gen-4.5); brak przezroczystości decyzji (brak XAI);
+wynik nie ma warto\'{s}ci diagnostycznej \\
 \hline
 Undetectable.ai &
-Znany z~detekcji tekstu AI; popularny w\'{s}r\'{o}d u\.{z}ytkownik\'{o}w &
-G\l{}\'ownie przeznaczony do~tekstu; wsparcie wideo ograniczone;
-wyniki do uzupe\l{}nienia \\
+Analiza wielokana\l{}owa (Image + Motion); precyzyjne wyniki liczbowe
+0--100; skuteczna detekcja klasycznych modeli Gen-3;
+dodatkowe informacje diagnostyczne (breakdown kana\l{}\'{o}w) &
+Problemy z~nowymi, fotorealistycznymi modelami
+(Gen-4 Turbo ,,busy city'' = 31\%);
+limit dzienny w~wersji bezp\l{}atnej;
+b\l{}\k{e}dy API (\texttt{video: 400}) przy niekt\'{o}rych plikach;
+od rzucanie plik\'{o}w przez system moderacji \\
 \hline
 \end{tabular}
 \end{table}
@@ -247,17 +412,18 @@ oraz metadanych. Poni\.{z}ej zestawiono jego g\l{}\'{o}wne w\l{}a\'{s}ciwo\'{s}c
 
 \paragraph{Zalety}
 \begin{itemize}
-  \item \textbf{Decyzja binarna} --- detektor zawsze podejmuje jednoznaczn\k{a}
-        decyzj\k{e} (AI / nie AI), eliminuj\k{a}c nierozstrzygni\k{e}te wyniki.
+  \item \textbf{Decyzja binarna} --- detektor zawsze podejmuje
+        jednoznaczn\k{a} decyzj\k{e} (AI~/~nie~AI), eliminuj\k{a}c
+        nierozstrzygni\k{e}te wyniki.
   \item \textbf{Wielosygna\l{}owo\'{s}\'{c}} --- po\l{}\k{a}czenie cech spektralnych,
         przep\l{}ywu optycznego i~metadanych zwi\k{e}ksza odporno\'{s}\'{c}
         na~manipulacje pojedynczym kana\l{}em.
-  \item \textbf{Interpretowalny wynik} --- ka\.{z}da decyzja zawiera wag\k{e}
-        sk\l{}adowych sygna\l{}\'{o}w, co umo\.{z}liwia analiz\k{e} przyczynow\k{a}.
-  \item \textbf{Brak zale\.{z}no\'{s}ci od chmury} --- mo\.{z}liwo\'{s}\'{c} uruchomienia
-        lokalnie, co istotne w~kontekstach wymagaj\k{a}cych prywatno\'{s}ci danych.
-  \item \textbf{Skalowalny na nowe modele} --- po przetrenowaniu na~nowych danych
-        mo\.{z}na dostosowa\'{c} do kolejnych generacji modeli AI.
+  \item \textbf{Interpretowalny wynik (XAI)} --- ka\.{z}da decyzja zawiera
+        wagi sk\l{}adowych sygna\l{}\'{o}w, co umo\.{z}liwia analiz\k{e} przyczynow\k{a}.
+  \item \textbf{Praca lokalna} --- mo\.{z}liwo\'{s}\'{c} uruchomienia bez
+        przesy\l{}ania danych do chmury.
+  \item \textbf{Skalowalny na~nowe modele} --- po przetrenowaniu na~nowych
+        danych mo\.{z}na dostosowa\'{c} do kolejnych generacji modeli AI.
 \end{itemize}
 
 \paragraph{Wady i~ograniczenia}
@@ -265,11 +431,10 @@ oraz metadanych. Poni\.{z}ej zestawiono jego g\l{}\'{o}wne w\l{}a\'{s}ciwo\'{s}c
   \item \textbf{Czuło\'{s}\'{c} na kompresj\k{e}} --- silna kompresja H.264/H.265
         mo\.{z}e wyt\l{}umi\'{c} sygna\l{}y spektralne.
   \item \textbf{Kr\'{o}tkie klipy} --- pliki poni\.{z}ej 5~sekund dostarczaj\k{a}
-        niewystarczaj\k{a}cej liczby klatek do rzetelnej analizy przep\l{}ywu
-        optycznego.
-  \item \textbf{Zasoby obliczeniowe} --- analiza wielokana\l{}owa wymaga
-        wi\k{e}kszej mocy obliczeniowej ni\.{z} proste narz\k{e}dzia oparte
-        na~metadanych.
+        niewystarczaj\k{a}cej liczby klatek do rzetelnej analizy.
+  \item \textbf{Zasoby obliczeniowe} --- analiza wielokana\l{}owa jest
+        bardziej wymagaj\k{a}ca ni\.{z} proste narz\k{e}dzia metadanowe.
   \item \textbf{Ograniczenia generalizacji} --- narz\k{e}dzie mo\.{z}e gorzej
-        dzia\l{}a\'{c} na~modelach generatywnych nieobj\k{e}tych zbiorem treningowym.
+        dzia\l{}a\'{c} na~modelach nieobj\k{e}tych zbiorem treningowym
+        (np.\ sceny wodne Kling AI).
 \end{itemize}
