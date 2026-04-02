@@ -86,6 +86,8 @@ from fusion_params import (
     AI_STYLE_CLIP_HIGH_CONF_THRESHOLD,
     AI_STYLE_SOFT_OVERRIDE_SCORE,
     LOWER_THIRD_QUALITY_PROB_THRESHOLD,
+    TC_MIN_AI_STYLE_PROB,
+    TC_ELIGIBLE_SCORES,
     LOW_TEXTURE_THRESHOLD_SWEEP,
     LOWER_THIRD_HARD_THRESHOLD,
     LOWER_THIRD_HARD_UPPER_MAX,
@@ -566,6 +568,17 @@ def fuse(
     score += int(max(0, fft_bonus))
     score += int(max(0, tc_bonus))
     clip_prob = float(ai_style_prob)
+
+    tc_conditional_boost_applied = 0
+    if (
+        int(tc_detected) == 1
+        and clip_prob >= float(TC_MIN_AI_STYLE_PROB)
+        and int(score) in set(TC_ELIGIBLE_SCORES)
+        and float(clip_prob) < float(LOWER_THIRD_QUALITY_PROB_THRESHOLD)
+    ):
+        score += 1
+        tc_conditional_boost_applied = 1
+
     lower_third_ok = not broadcast_trap
     # Fix D: lower-third quality gate (nie wzmacniaj sygnalu lower-third,
     # jesli brak AI-specific i CLIP ma niskie prawdopodobienstwo AI).
@@ -662,6 +675,8 @@ def fuse(
         mode += ";guard_broadcast_score_cap=1"
     if of_penalty_applied:
         mode += ";guard_of_penalty=1"
+    if tc_conditional_boost_applied:
+        mode += ";tc_conditional_boost=1"
     return detected, float(score), mode, int(ai_specific), int(broadcast_trap)
 =======
 
