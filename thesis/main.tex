@@ -8,6 +8,8 @@
 \usepackage{ragged2e}           % \RaggedRight w komórkach p{}
 \usepackage{array}              % rozszerzone typy kolumn
 \usepackage{xurl}               % łamanie długich URL-i w bibliografii
+\usepackage{graphicx}           % wstawianie rysunków
+\usepackage{xcolor}             % kolory w podpisach rysunków
 \addbibresource{bibliography.bib}
 
 \author{Bart\l{}omiej Pomiet\l{}o}
@@ -110,11 +112,10 @@ rozwijaj\k{a}cej si\k{e} dezinformacji opartej na~AI.
 \renewcommand{\listtablename}{}
 \listoftables
 
-% Wykaz rysunkow -- odkomentowac gdy praca bedzie zawierac rysunki
-% \chapter*{Wykaz rysunk\'{o}w}
-% \addcontentsline{toc}{chapter}{Wykaz rysunk\'{o}w}
-% \renewcommand{\listfigurename}{}
-% \listoffigures
+\chapter*{Wykaz rysunk\'{o}w}
+\addcontentsline{toc}{chapter}{Wykaz rysunk\'{o}w}
+\renewcommand{\listfigurename}{}
+\listoffigures
 
 % -------------------------------------------------------
 % WYKAZ SKROTOW
