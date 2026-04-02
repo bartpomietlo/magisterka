@@ -75,3 +75,46 @@ reszta plików.rar
 kod/dataset/*
 !kod/dataset/*.py
 !kod/dataset/*.csv
+
+# Dataset lokalny (pliki wideo i foldery)
+dataset/
+input_temp/
+input_temp_kling/
+output_resized/
+output_undetectable/
+
+# Modele ML (lokalne pliki pkl/json)
+*.pkl
+flux_fft_thresholds.json
+
+# Lokalne CSV z jednorazowych analiz (nie wyniki ewaluacji)
+clip_classifier_cv_results.csv
+clip_grok_scores.csv
+clip_prob_distribution.csv
+clip_embedding_plot.png
+clip_embeddings.pkl
+compressed_fn_analysis.csv
+compression_params.csv
+compression_signal_degradation.csv
+dct_scores.csv
+fft_debug_scores.csv
+fft_refactor_regression.txt
+fix_d_tweak_result.txt
+flux_artifact_report.txt
+flux_artifact_scores.csv
+flux_integration_report.txt
+flux_v2_report.txt
+fp_reduction_final_report.txt
+fp_reduction_iterations.csv
+fp_trap_clip_margins.csv
+fp_trap_fp_analysis.csv
+lost_tp_analysis.csv
+resize_full_comparison.csv
+temporal_consistency_scores.csv
+wyniki innych aplikacji.txt
+
+# Skrypty tymczasowe PowerShell
+tmp_*.ps1
+
+# Zdjecia do pracy (lokalne, nie w repo)
+thesis/photos/
