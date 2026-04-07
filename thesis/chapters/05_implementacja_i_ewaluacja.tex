@@ -247,6 +247,25 @@ w~\texttt{evaluate.py}, korzystająca wyłącznie ze~stałych zdefiniowanych
 w~\texttt{fusion\_params.py}. Dzięki temu parametry heurystyki można
 modyfikować bez~ingerencji w~logikę pozostałych modułów.
 
+\section{Cinematic Path Guard}
+
+Podjęcia dodatkowe zabezpieczenie w~systemie opiera się na~obserwacji, że
+ścieżka kinematyczna (high optical flow count + low HF ratio) może być aktywowana
+przez naturalne nagrania o~dużym ruchu (urbańskie sceny nocne, efekty graficzne
+z~natywną dynamiką lokalną). Aby zapobiec fałszywym pozytywom w~kategorii
+\texttt{adv\_fp\_trap} zawierającej materiały takie jak Times Square Billboard,
+vMix iSoccer Package czy King's Cross Tube, wprowadzono mechanizm
+\textbf{cinematic\_path\_guard}.
+
+Reguła działa następująco: gdy sygnał AI-specific pochodzi wyłącznie ze~ścieżki
+kinematycznej OF (warunki: $\texttt{of\_count} \geq 3$, $\texttt{freq\_hf\_ratio} < 0{,}52$,
+$\texttt{of\_wide\_lower} = 0$), a~klasyfikator stylistyczny CLIP przypisuje
+prawdopodobieństwo poniżej progu $\texttt{CINEMATIC\_CLIP\_MIN\_PROB} = 0{,}20$,
+flaga \texttt{ai\_specific} jest zerowana, skutecznie usuwając ``fałszywe'' aktywacje
+dla~materiałów bez~rzeczywistych cech generatywnych. Wyjątkiem są materiały,
+które zawierają kompaktowe, narożne nakładki (small-area ai\_style, $< 3\%$ obszaru),
+gdzie kinematyczna ścieżka jest dopuszczalna nawet przy~niskim wyni ku CLIP.
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{../photos/analized_frames.png}

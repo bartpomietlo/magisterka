@@ -89,6 +89,7 @@ from fusion_params import (
     TC_MIN_AI_STYLE_PROB,
     TC_ELIGIBLE_SCORES,
     TC_MAX_LOWER_THIRD_PROB,
+    CINEMATIC_CLIP_MIN_PROB,
     LOW_TEXTURE_THRESHOLD_SWEEP,
     LOWER_THIRD_HARD_THRESHOLD,
     LOWER_THIRD_HARD_UPPER_MAX,
@@ -397,7 +398,7 @@ def compute_ai_flags(
     low_texture_threshold: int = LOW_TEXTURE_THRESHOLD,
     hf_ratio_threshold: float = HF_RATIO_THRESHOLD,
     max_area_ratio_threshold: float = MAX_AREA_RATIO_THRESHOLD,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     iw_strong = bool(row.get("iw_matched")) and float(row.get("iw_similarity", 0.0)) >= 0.85
     flux_detected = int(row.get("flux_combined", row.get("flux_detected", 0))) == 1
     hf_ratio = float(row.get("freq_hf_ratio_mean", 1.0))
@@ -420,6 +421,21 @@ def compute_ai_flags(
     ]
     c2pa_ai = int(row.get("c2pa_ai", 0)) == 1
     ai_specific = int(iw_strong or c2pa_ai or flux_detected or sum(ai_signals) >= 2)
+    
+    # Guard: ścieżka kinematyczna nie może być jedynym uzasadnieniem ai_specific,
+    # jeśli CLIP nie daje żadnego sygnału AI (natural high-motion footage).
+    clip_prob_local = float(row.get("ai_style_prob", 0.0))
+    only_cinematic = (
+        not iw_strong
+        and not c2pa_ai
+        and not flux_detected
+        and int(row.get("of_corner_compact_roi_count", 0)) == 0
+        and not (of_count >= 3 and area_ratio < max_area_ratio_threshold)
+        and clip_prob_local < CINEMATIC_CLIP_MIN_PROB
+    )
+    if only_cinematic and ai_specific == 1:
+        ai_specific = 0
+    
     lower_third_ratio = float(row.get("of_lower_third_roi_ratio", 0.0))
     upper_third_ratio = float(row.get("of_upper_third_roi_ratio", 1.0))
     center_ratio = float(row.get("of_center_roi_ratio", 0.0))
@@ -466,7 +482,7 @@ def compute_ai_flags(
     )
     if broadcast_trap:
         ai_specific = 0
-    return ai_specific, broadcast_trap
+    return ai_specific, broadcast_trap, int(only_cinematic)
 
 
 def fuse(
@@ -553,7 +569,7 @@ def fuse(
         hf_ratio_threshold=hf_ratio_threshold,
         max_area_ratio_threshold=max_area_ratio_threshold,
     )
-    ai_specific, broadcast_trap = compute_ai_flags(
+    ai_specific, broadcast_trap, only_cinematic_guard = compute_ai_flags(
         row,
         low_texture_threshold=low_texture_threshold,
         hf_ratio_threshold=hf_ratio_threshold,
@@ -688,6 +704,8 @@ def fuse(
         mode += ";guard_of_penalty=1"
     if tc_conditional_boost_applied:
         mode += ";tc_conditional_boost=1"
+    if only_cinematic_guard:
+        mode += ";guard_cinematic_no_clip=1"
     if ENABLE_CLEAN_AI_RESCUE and clean_ai_rescue_motion and points_score < POINTS_THRESHOLD_DEFAULT:
         mode += ";rescue=cinematic_motion"
     if ENABLE_CLEAN_AI_RESCUE and clean_ai_rescue_strict and points_score < POINTS_THRESHOLD_DEFAULT:
