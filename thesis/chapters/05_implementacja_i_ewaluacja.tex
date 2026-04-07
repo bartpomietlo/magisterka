@@ -159,7 +159,9 @@ Wartość ta pełni w~systemie podwójną rolę. Po~pierwsze, wysoki wynik
 jest traktowany jako samodzielny sygnał AI-specific, co~może wywołać
 detekcję nawet przy~niskim wyniku punktowym funkcji fuzji.
 Po~drugie, wartość ta~jest wykorzystywana jako warunek aktywacji
-heurystyki TC Conditional Boost opisanej w~sekcji~\ref{sec:tc_boost}.
+heurystyki TC Conditional Boost opisanej w~sekcji~\ref{sec:tc_boost}
+oraz jako warunek blokujący dla~ścieżki kinematycznej opisanej
+w~sekcji~\ref{sec:cinematic_guard}.
 
 \subsection*{Spójność temporalna --- moduł TemporalConsistency}
 
@@ -206,6 +208,11 @@ dodatkowe mechanizmy zabezpieczające przed~fałszywymi alarmami:
   \item \textbf{of\_penalty} --- odejmuje~2~punkty, gdy liczba regionów
     przepływu optycznego przekracza~20 przy~braku sygnału AI-specific,
     co~chroni przed~detekcją dynamicznych nagrań sportowych i~koncertowych;
+  \item \textbf{high\_score\_override\_guard} --- wynik punktowy powyżej progu
+    \texttt{HIGH\_SCORE\_OVERRIDE\_THRESHOLD} (domyślnie~6) nie wywołuje
+    detekcji, jeżeli \texttt{ai\_specific}~$= 0$; chroni to~przed sytuacją,
+    w~której duże bonusy FFT na~materiale broadcastowym sztucznie zawyżają
+    wynik bez~potwierdzenia ze~strony sygnałów specyficznych dla~AI;
   \item \textbf{clean\_ai\_rescue} --- specjalna ścieżka detekcji dla~filmów
     bez~widocznych nakładek, z~niskim udziałem HF i~bez~jakichkolwiek
     sygnałów broadcastowych, dedykowana materiałom Sora i~Runway Gen3,
@@ -229,7 +236,7 @@ trzy warunki:
   \item ocena stylistyczna CLIP mieści się w~przedziale umiarkowanego
     sygnału AI: $p_\text{AI} \geq \texttt{TC\_MIN\_AI\_STYLE\_PROB} = 0{,}44$,
   \item wartość $p_\text{AI}$ jest jednocześnie poniżej progu
-    $\texttt{LOWER\_THIRD\_QUALITY\_PROB\_THRESHOLD} = 0{,}50$,
+    $\texttt{TC\_MAX\_LOWER\_THIRD\_PROB} = 0{,}50$,
     co~eliminuje materiały broadcastowe z~animowanymi planszami dolnej trzeciej,
     u~których CLIP może generować umiarkowany wynik AI.
 \end{enumerate}
@@ -248,23 +255,28 @@ w~\texttt{fusion\_params.py}. Dzięki temu parametry heurystyki można
 modyfikować bez~ingerencji w~logikę pozostałych modułów.
 
 \section{Cinematic Path Guard}
+\label{sec:cinematic_guard}
 
-Podjęcia dodatkowe zabezpieczenie w~systemie opiera się na~obserwacji, że
-ścieżka kinematyczna (high optical flow count + low HF ratio) może być aktywowana
-przez naturalne nagrania o~dużym ruchu (urbańskie sceny nocne, efekty graficzne
-z~natywną dynamiką lokalną). Aby zapobiec fałszywym pozytywom w~kategorii
-\texttt{adv\_fp\_trap} zawierającej materiały takie jak Times Square Billboard,
-vMix iSoccer Package czy King's Cross Tube, wprowadzono mechanizm
-\textbf{cinematic\_path\_guard}.
+Dodatkowe zabezpieczenie systemu opiera się na~obserwacji, że
+ścieżka kinematyczna (wysoka liczba wektorów przepływu optycznego
+i~niski udział składowych HF) może aktywować detekcję AI
+na~naturalnych nagraniach z~dużym ruchem --- nocnych scenach miejskich,
+efektach graficznych renderowanych w~czasie rzeczywistym czy dynamicznie
+filmowanych wydarzeniach sportowych.
 
-Reguła działa następująco: gdy sygnał AI-specific pochodzi wyłącznie ze~ścieżki
-kinematycznej OF (warunki: $\texttt{of\_count} \geq 3$, $\texttt{freq\_hf\_ratio} < 0{,}52$,
-$\texttt{of\_wide\_lower} = 0$), a~klasyfikator stylistyczny CLIP przypisuje
-prawdopodobieństwo poniżej progu $\texttt{CINEMATIC\_CLIP\_MIN\_PROB} = 0{,}20$,
-flaga \texttt{ai\_specific} jest zerowana, skutecznie usuwając ``fałszywe'' aktywacje
-dla~materiałów bez~rzeczywistych cech generatywnych. Wyjątkiem są materiały,
-które zawierają kompaktowe, narożne nakładki (small-area ai\_style, $< 3\%$ obszaru),
-gdzie kinematyczna ścieżka jest dopuszczalna nawet przy~niskim wyni ku CLIP.
+Mechanizm \textbf{Cinematic Path Guard} działa dwutorowo. Po~pierwsze,
+gdy sygnał AI-specific pochodzi wyłącznie ze~ścieżki kinematycznej
+(warunki: $\texttt{of\_count} \geq 3$, $\texttt{freq\_hf\_ratio} < 0{,}52$,
+$\texttt{of\_wide\_lower} = 0$), a~klasyfikator CLIP przypisuje
+prawdopodobieństwo poniżej $\texttt{CINEMATIC\_CLIP\_MIN\_PROB} = 0{,}20$,
+flaga \texttt{ai\_specific} jest zerowana, co~blokuje detekcję dla~materiałów
+bez~rzeczywistych cech generatywnych. Po~drugie, ścieżka
+\texttt{clean\_ai\_rescue\_motion} --- dedykowana filmom bez~nakładek
+o~bogatym ruchu kamerowym (Runway Gen3, Luma Modify) --- wymaga spełnienia
+co~najmniej jednego z~warunków: $p_\text{AI} \geq \texttt{CINEMATIC\_RESCUE\_MIN\_CLIP\_PROB} = 0{,}20$
+lub obecności kompaktowej narożnej nakładki (\texttt{of\_corner\_compact\_roi\_count}~$\geq 1$).
+Dzięki temu nagrania w~rodzaju \enquote{Ginza in Tokyo} czy teledyski
+z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
 
 \begin{figure}[H]
   \centering
@@ -340,36 +352,39 @@ Kategoria & Opis & $N$ \\
 \subsection*{Wyniki końcowe}
 
 Tabela~\ref{tab:eval_results} przedstawia wyniki końcowej wersji detektora
-z~aktywnym mechanizmem TC Conditional Boost.
+po~wprowadzeniu poprawek \texttt{high\_score\_override\_guard}
+i~\texttt{cinematic\_rescue\_guard}.
 
 \begin{table}[h]
 \centering
 \caption{Metryki klasyfikacji końcowej wersji detektora}
 \label{tab:eval_results}
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-Kategoria & $N$ & Recall & Precyzja & F1 & FPR \\
+Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
 \midrule
-\texttt{ai\_baseline}    & 43 & 0{,}837 & 1{,}000 & 0{,}911 & 0{,}000 \\
-\texttt{adv\_compressed} & 26 & 0{,}808 & 1{,}000 & 0{,}894 & 0{,}000 \\
-\texttt{adv\_cropped}    & 26 & 0{,}923 & 1{,}000 & 0{,}960 & 0{,}000 \\
-\texttt{adv\_fp\_trap}   & 42 & ---     & ---     & ---     & 0{,}119 \\
+\texttt{ai\_baseline}    & 43 & 26 & 17 & 0{,}605 & 0{,}754 & --- \\
+\texttt{adv\_compressed} & 26 & 15 & 11 & 0{,}577 & 0{,}732 & --- \\
+\texttt{adv\_cropped}    & 26 & 14 & 12 & 0{,}538 & 0{,}700 & --- \\
+\texttt{adv\_fp\_trap}   & 42 & --- & --- & ---     & ---     & 0{,}095 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Detektor osiągnął recall~0{,}837 na~zbiorze bazowym
-oraz~0{,}923 na~materiale przyciętym, co~potwierdza skuteczność
-mechanizmu odbudowy sygnału przepływu optycznego dla~kadrowanych nagrań~AI.
-Wskaźnik fałszywych alarmów wyniósł $\mathrm{FPR} = 0{,}119$
-dla~kategorii \texttt{adv\_fp\_trap}, co~plasuje się poniżej
-wyznaczonego progu $1/7 \approx 0{,}143$. Precyzja równa~1{,}000
-we~wszystkich kategoriach pozytywnych oznacza brak fałszywych pozytywów
-poza dedykowaną kategorią broadcastową.
+Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
+i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
+Wskaźnik fałszywych alarmów wyniósł $\mathrm{FPR} = 0{,}095$
+(4 FP na 42 próbkach negatywnych) dla~kategorii \texttt{adv\_fp\_trap},
+co~plasuje się wyraźnie poniżej wyznaczonego progu $1/7 \approx 0{,}143$.
+W~porównaniu z~wcześniejszą wersją detektora ($\mathrm{FPR} = 0{,}190$, 8~FP)
+wprowadzone poprawki wyeliminowały połowę fałszywych alarmów
+bez~utraty żadnego prawdziwego pozytywu.
+Precyzja globalna wynosi $55/(55+4) \approx 0{,}932$,
+co~oznacza, że spośród wszystkich detekcji niecałe 7\% to~błędne alarmy.
 
 \subsection*{Analiza błędów}
 
-Fałszywe negatywy w~zbiorze \texttt{ai\_baseline} (7~przypadków na~43)
+Fałszywe negatywy w~zbiorze \texttt{ai\_baseline} (17~przypadków na~43)
 dotyczą materiałów generatywnych, w~których generator nie osadził
 widocznego watermarku, a~sygnały pośrednie (HF, texture, TC) nie
 przekraczają progów przy~braku sygnału Flux lub C2PA.
@@ -377,15 +392,18 @@ Są to~głównie krótkie klipy z~dużym ruchem kamerowym i~złożoną
 scenografią --- ich charakterystyka wizualna zbliża się do~naturalnych
 nagrań dokumentalnych.
 
-Pięć fałszywych pozytywów w~zbiorze \texttt{adv\_fp\_trap}
-charakteryzuje się wynikiem~$s = 4{,}0$ przy~aktywnym \texttt{tc\_detected},
-ale bez~sygnału \texttt{broadcast\_trap}. Materiały te~to~nagrania sportowe
-z~dynamicznym ruchem i~jednorodnym tłem boiska, których profil widmowy
-i~teksturowy jest mylnie interpretowany jako cechy generatywne.
-Ponieważ TC Conditional Boost nie aktywuje się dla~wyników $s \geq 4$
-(warunek \texttt{TC\_ELIGIBLE\_SCORES}), żaden z~tych przypadków nie został
-wzmocniony przez heurystykę --- błędna klasyfikacja pochodzi wyłącznie
-z~wyniku bazowej funkcji fuzji.
+Cztery pozostałe fałszywe pozytywy w~zbiorze \texttt{adv\_fp\\_trap}
+to~materiały z~aktywnym \texttt{tc\_detected} i~umiarkowanym wynikiem
+przepływu optycznego, ale bez~sygnałów broadcast ani sygnału CLIP.
+Obejmują nagrania z~dynamiczną grafiką (efekty AR w~transmisjach sportowych,
+interaktywne plansze studyjne) --- ich profil widmowy i~teksturowy
+jest na~tyle zbliżony do~materiałów generatywnych,
+że żadna z~istniejących heurystyk nie jest w~stanie ich odróżnić
+bez~ryzyka pominięcia rzeczywistych materiałów AI o~podobnym charakterze.
+Ponieważ TC Conditional Boost nie aktywuje się dla~$s \geq 4$
+(warunek \texttt{TC\_ELIGIBLE\_SCORES}), żaden z~tych przypadków
+nie został wzmocniony przez tę heurystykę ---
+błędna klasyfikacja pochodzi wyłącznie z~bazowej funkcji fuzji.
 
 % -------------------------------------------------------------------
 \section{Wnioski implementacyjne}
