@@ -374,13 +374,58 @@ Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
 Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
 i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
 Wskaźnik fałszywych alarmów wyniósł $\mathrm{FPR} = 0{,}095$
-(4 FP na 42 próbkach negatywnych) dla~kategorii \texttt{adv\_fp\_trap},
+(4~FP na~42~próbkach negatywnych) dla~kategorii \texttt{adv\_fp\_trap},
 co~plasuje się wyraźnie poniżej wyznaczonego progu $1/7 \approx 0{,}143$.
 W~porównaniu z~wcześniejszą wersją detektora ($\mathrm{FPR} = 0{,}190$, 8~FP)
 wprowadzone poprawki wyeliminowały połowę fałszywych alarmów
 bez~utraty żadnego prawdziwego pozytywu.
-Precyzja globalna wynosi $55/(55+4) \approx 0{,}932$,
-co~oznacza, że spośród wszystkich detekcji niecałe 7\% to~błędne alarmy.
+Precyzja globalna wynosi $55/(55+4) \approx 0{,}932$ na~zbiorze ewaluacyjnym,
+przy~czym należy zaznaczyć, że~zbiór ten~nie jest w~pełni zrównoważony
+--- 95~próbek pozytywnych wobec~42~negatywnych --- co~zawyża bezwzględną
+wartość precyzji i~sprawia, że~recall oraz FPR są bardziej miarodajnymi
+wskaźnikami jakości detektora w~tym~kontekście.
+
+\subsection*{Analiza przestrzeni parametrów --- front Pareto}
+
+Dobór domyślnego progu detekcji nie był arbitralny. Przeprowadzono
+systematyczny sweep parametrów funkcji fuzji, generując kilkadziesiąt
+konfiguracji różniących się wartością progu punktowego, wagami
+poszczególnych sygnałów i~aktywnością heurystyk zabezpieczających.
+Każda konfiguracja została oceniona parą metryk: TPR na~zbiorze
+\texttt{ai\_baseline} oraz FPR na~zbiorze \texttt{adv\_fp\_trap}.
+
+Rysunek~\ref{fig:pareto} przedstawia front Pareto wyznaczony z~wyników
+tego sweepowania. Każdy szary punkt odpowiada jednej testowanej konfiguracji;
+niebieskie punkty tworzą front Pareto --- zbiór konfiguracji,
+dla~których żadna inna nie poprawia jednocześnie obu metryk.
+Czerwona gwiazdka oznacza punkt operacyjny wybranej konfiguracji
+domyślnej: $\mathrm{FPR} = 0{,}095$, $\mathrm{TPR} = 0{,}60$.
+Pomarańczowa linia przerywana wyznacza cel projektowy
+$\mathrm{FPR} \leq 1/7 \approx 0{,}143$; zielona strefa pożądana
+zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{../figures/07_pareto_frontier.png}
+  \caption{Front Pareto trade-off FPR/TPR wyznaczony z~systematycznego
+    sweepowania parametrów fuzji. Szare punkty to~wszystkie testowane
+    konfiguracje; niebieskie punkty tworzą front Pareto.
+    Czerwona gwiazdka ($\mathrm{FPR}=0{,}095$, $\mathrm{TPR}=0{,}60$)
+    odpowiada domyślnej konfiguracji produkcyjnej.
+    Pomarańczowa linia przerywana wyznacza cel projektowy
+    $\mathrm{FPR} \leq 1/7 \approx 0{,}143$.
+    Punkt operacyjny leży wewnątrz strefy pożądanej i~na~froncie Pareto,
+    co~potwierdza, że~żadna z~pozostałych konfiguracji nie zapewnia
+    lepszego TPR przy~zachowaniu tego~samego FPR.}
+  \label{fig:pareto}
+\end{figure}
+
+Istotna obserwacja wynikająca z~wykresu: wszystkie konfiguracje na~froncie Pareto
+skupiają się w~wąskim przedziale $\mathrm{FPR} \in [0{,}05;\, 0{,}12]$,
+co~wskazuje, że~dalsze zmniejszenie liczby fałszywych alarmów jest możliwe
+jedynie kosztem istotnego obniżenia recall. Wybrana konfiguracja
+maksymalizuje TPR w~tym~przedziale, pozostając jednocześnie
+po~lewej stronie linii celu.
 
 \subsection*{Analiza błędów}
 
@@ -392,13 +437,13 @@ Są to~głównie krótkie klipy z~dużym ruchem kamerowym i~złożoną
 scenografią --- ich charakterystyka wizualna zbliża się do~naturalnych
 nagrań dokumentalnych.
 
-Cztery pozostałe fałszywe pozytywy w~zbiorze \texttt{adv\_fp\\_trap}
+Cztery pozostałe fałszywe pozytywy w~zbiorze \texttt{adv\_fp\_trap}
 to~materiały z~aktywnym \texttt{tc\_detected} i~umiarkowanym wynikiem
 przepływu optycznego, ale bez~sygnałów broadcast ani sygnału CLIP.
 Obejmują nagrania z~dynamiczną grafiką (efekty AR w~transmisjach sportowych,
 interaktywne plansze studyjne) --- ich profil widmowy i~teksturowy
 jest na~tyle zbliżony do~materiałów generatywnych,
-że żadna z~istniejących heurystyk nie jest w~stanie ich odróżnić
+że~żadna z~istniejących heurystyk nie jest w~stanie ich odróżnić
 bez~ryzyka pominięcia rzeczywistych materiałów AI o~podobnym charakterze.
 Ponieważ TC Conditional Boost nie aktywuje się dla~$s \geq 4$
 (warunek \texttt{TC\_ELIGIBLE\_SCORES}), żaden z~tych przypadków
