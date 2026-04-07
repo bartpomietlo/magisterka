@@ -88,6 +88,7 @@ from fusion_params import (
     LOWER_THIRD_QUALITY_PROB_THRESHOLD,
     TC_MIN_AI_STYLE_PROB,
     TC_ELIGIBLE_SCORES,
+    TC_MAX_LOWER_THIRD_PROB,
     LOW_TEXTURE_THRESHOLD_SWEEP,
     LOWER_THIRD_HARD_THRESHOLD,
     LOWER_THIRD_HARD_UPPER_MAX,
@@ -567,7 +568,7 @@ def fuse(
         int(tc_detected) == 1
         and clip_prob >= float(TC_MIN_AI_STYLE_PROB)
         and int(score) in set(TC_ELIGIBLE_SCORES)
-        and float(clip_prob) < float(LOWER_THIRD_QUALITY_PROB_THRESHOLD)
+        and float(clip_prob) < float(TC_MAX_LOWER_THIRD_PROB)
     ):
         score += 1
         tc_conditional_boost_applied = 1

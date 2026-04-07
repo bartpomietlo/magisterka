@@ -24,6 +24,8 @@ CLEAN_AI_HF_THRESHOLD = 0.50
 CLEAN_AI_HF_THRESHOLD_SWEEP = [0.42, 0.45, 0.48, 0.50, 0.53, 0.56]
 CLEAN_AI_MAX_AREA_RATIO = 0.02
 CLEAN_AI_MAX_AREA_RATIO_SWEEP = [0.01, 0.02, 0.03, 0.05]
+# Uwaga: te sweepy są zdefiniowane, ale run_threshold_sweep() nie iteruje ich
+# bezpośrednio. Pozostawiono je jako dokumentację przestrzeni do dalszego strojenia.
 ENABLE_CLEAN_AI_RESCUE = True
 
 # Soft broadcast guard (fallback when hard traps do not fire)
