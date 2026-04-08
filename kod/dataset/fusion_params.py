@@ -55,3 +55,26 @@ LOWER_THIRD_QUALITY_PROB_THRESHOLD = 0.50
 TC_MIN_AI_STYLE_PROB = 0.44
 TC_ELIGIBLE_SCORES = [2, 3]
 TC_MAX_LOWER_THIRD_PROB = 0.50  # guard against fp_trap FP
+
+# Cinematic path guard — prevent FP on natural high-motion footage
+CINEMATIC_CLIP_MIN_PROB = 0.20
+# Minimalny ai_style_prob wymagany, gdy ai_specific pochodzi wyłącznie
+# ze ścieżki kinematycznej OF. Blokuje FP na naturalnym materiale z dużym
+# ruchem, który ma niskie HF bez cech AI (Times Square, vMix, King's Cross).
+
+# Cinematic rescue minimum clip confidence
+CINEMATIC_RESCUE_MIN_CLIP_PROB = 0.20
+# Minimalne ai_style_prob wymagane dla clean_ai_rescue_motion,
+# aby ścieżka kinematyczna miała przynajmniej umiarkowany sygnał CLIP.
+
+# Zero-CLIP penalty — penalize high OF-count when CLIP rejects AI
+ZERO_CLIP_PENALTY_THRESHOLD = 0.01
+# Próg ai_style_prob poniżej którego aktywuje się kara za brak potwierdzenia CLIP.
+# Zapobiega FP na filmach z naturalnym ruchem i niskim HF, które nie są AI.
+OF_LARGE_AREA_RATIO_GUARD = 0.05
+# Minimalna wartość of_max_area_ratio do kary dla dużych statycznych obszarów OF
+# bez potwierdzenia CLIP. Pokrywa vMix/sport overlays z dużą płaszczyzną OF.
+OF_UPPER_DOMINANCE_RATIO = 0.65
+# Próg udziału OF w górnej tercji, który wskazuje na naturalne przejście/korytarz.
+OF_LOWER_MAX_FOR_UPPER_GUARD = 0.15
+# Maksymalny udział OF w dolnej trzeciej dla potrzeby strażnika górnej dominacji.

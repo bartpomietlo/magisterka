@@ -385,6 +385,96 @@ def plot_score_distribution(rows_eval: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 07 — Pareto frontier: FPR vs TPR (threshold sweep)
+# ---------------------------------------------------------------------------
+
+def plot_pareto_frontier() -> None:
+    pareto_csv = RESULTS_DIR / "pareto_frontier.csv"
+    sweep_csv  = RESULTS_DIR / "threshold_sweep.csv"
+
+    if not pareto_csv.exists():
+        print("  [SKIP] Brak pareto_frontier.csv")
+        return
+
+    # Wczytaj wszystkie konfiguracje ze sweep (szare punkty tla)
+    bg_fprs, bg_tprs = [], []
+    if sweep_csv.exists():
+        for r in load_csv(sweep_csv):
+            try:
+                bg_fprs.append(_f(r["FPR_adv_fp_trap"]))
+                bg_tprs.append(_f(r["TPR_aibaseline"]))
+            except KeyError:
+                pass
+
+    # Wczytaj punkty Pareto
+    pareto_rows = load_csv(pareto_csv)
+    p_fprs, p_tprs, p_labels = [], [], []
+    for r in pareto_rows:
+        try:
+            p_fprs.append(_f(r["FPR_adv_fp_trap"]))
+            p_tprs.append(_f(r["TPR_aibaseline"]))
+            hf  = r.get("hf_threshold", r.get("hf", "?"))
+            pts = r.get("points_threshold", r.get("pts", "?"))
+            p_labels.append(f"hf={hf}\npts={pts}")
+        except KeyError:
+            pass
+
+    if not p_fprs:
+        print("  [SKIP] pareto_frontier.csv nie zawiera wymaganych kolumn")
+        return
+
+    # Punkt operacyjny = domyslny prog (FPR=0.095, TPR=0.605)
+    op_fpr, op_tpr = 0.095, 0.605
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    # Wszystkie konfiguracje — szare tlo
+    if bg_fprs:
+        ax.scatter(bg_fprs, bg_tprs, color="lightgray", s=22, alpha=0.6,
+                   zorder=1, label="Wszystkie konfiguracje")
+
+    # Linia frontu Pareto
+    sorted_pareto = sorted(zip(p_fprs, p_tprs), key=lambda x: x[0])
+    pf_x = [pt[0] for pt in sorted_pareto]
+    pf_y = [pt[1] for pt in sorted_pareto]
+    ax.plot(pf_x, pf_y, color="#2c7bb6", linewidth=2.0,
+            linestyle="--", zorder=2, alpha=0.7)
+
+    # Punkty Pareto
+    ax.scatter(p_fprs, p_tprs, color="#2c7bb6", s=55, zorder=3,
+               label="Front Pareto")
+
+    # Etykiety punktow Pareto (tylko jesli malo punktow)
+    if len(p_labels) <= 12:
+        for x_, y_, lbl in zip(p_fprs, p_tprs, p_labels):
+            ax.annotate(lbl, (x_, y_),
+                        textcoords="offset points", xytext=(6, 4),
+                        fontsize=7, color="#1a5276")
+
+    # Punkt operacyjny
+    ax.scatter([op_fpr], [op_tpr], color="#d7191c", s=120, zorder=5,
+               marker="*", label=f"Punkt operacyjny (domyślny próg)\nFPR={op_fpr:.3f}, TPR={op_tpr:.2f}")
+
+    # Linie pomocnicze: cel FPR <= 1/7
+    ax.axvline(1/7, color="#e08214", linestyle=":", linewidth=1.5,
+               label=f"Cel: FPR ≤ 1/7 ≈ {1/7:.3f}")
+
+    # Strefa pozadana: lewy gorny rog
+    ax.fill_betweenx([op_tpr, 1.0], 0, 1/7,
+                     color="#1a9641", alpha=0.06, label="Strefa pożądana")
+
+    ax.set_xlabel("False Positive Rate (FPR) — adv_fp_trap", fontsize=12)
+    ax.set_ylabel("True Positive Rate / Recall — ai_baseline", fontsize=12)
+    ax.set_title("Front Pareto: trade-off FPR vs TPR\n(sweep parametrów fuzji)", fontsize=13, pad=12)
+    ax.set_xlim(-0.02, 0.55)
+    ax.set_ylim(0.0, 1.05)
+    ax.legend(loc="lower right", framealpha=0.92, fontsize=10)
+
+    fig.tight_layout()
+    save(fig, "07_pareto_frontier.png")
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -413,11 +503,14 @@ def main() -> None:
     print("[4/6] Wklad detektorow...")
     plot_detector_contribution(rows_raw)
 
-    print("[5/6] Krzywa ROC...")
+    print("[5/7] Krzywa ROC...")
     plot_roc_curve(rows_eval)
 
-    print("[6/6] Rozklad fusion_score...")
+    print("[6/7] Rozklad fusion_score...")
     plot_score_distribution(rows_eval)
+
+    print("[7/7] Front Pareto FPR/TPR...")
+    plot_pareto_frontier()
 
     print(f"\nGotowe. Wykresy zapisano w: {OUT_DIR}")
 

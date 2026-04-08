@@ -90,6 +90,11 @@ from fusion_params import (
     TC_ELIGIBLE_SCORES,
     TC_MAX_LOWER_THIRD_PROB,
     CINEMATIC_CLIP_MIN_PROB,
+    CINEMATIC_RESCUE_MIN_CLIP_PROB,
+    ZERO_CLIP_PENALTY_THRESHOLD,
+    OF_LARGE_AREA_RATIO_GUARD,
+    OF_UPPER_DOMINANCE_RATIO,
+    OF_LOWER_MAX_FOR_UPPER_GUARD,
     LOW_TEXTURE_THRESHOLD_SWEEP,
     LOWER_THIRD_HARD_THRESHOLD,
     LOWER_THIRD_HARD_UPPER_MAX,
@@ -622,6 +627,47 @@ def fuse(
         score = points_score
         of_penalty_applied = 1
 
+    # Poprawka 3: ai_style_prob == 0 penalty
+    # Gdy CLIP nie potwierdza AI (prob<ZERO_CLIP_PENALTY_THRESHOLD), flux nie aktywny i brak c2pa,
+    # obniż score o 1 punkt aby zmniejszyć progi FP z wiadomością kinematyczną.
+    # Nie stosuj gdy jest tc_bonus (temporal sygnał zazwyczaj potwierdzony).
+    zero_clip_penalty_applied = 0
+    if (
+        clip_prob < float(ZERO_CLIP_PENALTY_THRESHOLD)
+        and int(flux_combined) == 0
+        and int(c2pa_ai) == 0
+        and int(tc_bonus) == 0
+        and ai_specific == 1
+    ):
+        points_score -= 1
+        zero_clip_penalty_applied = 1
+
+    # Poprawka B: dużą część OF w górnej części bez clip/c2pa/flux
+    # Typowe dla sportowych overlayów vMix/scoreboard, ale bez lower-third pattern.
+    guard_large_of_no_clip = 0
+    if (
+        float(row.get("of_max_area_ratio", 0.0)) >= float(OF_LARGE_AREA_RATIO_GUARD)
+        and int(row.get("broadcast_lower_third_pattern", 0)) == 0
+        and float(ai_style_prob) < 0.01
+        and int(flux_combined) == 0
+        and int(c2pa_ai) == 0
+    ):
+        points_score -= 1
+        guard_large_of_no_clip = 1
+
+    # Poprawka C: dominacja górnej tercji OF w naturalnym nagraniu korytarza/przejścia
+    # Kings Cross, Broadcast Intro: duży statyczny sufit/ściany u góry, mało OF na dole.
+    guard_upper_of_dominance = 0
+    if (
+        float(row.get("of_upper_third_roi_ratio", 0.0)) >= float(OF_UPPER_DOMINANCE_RATIO)
+        and float(row.get("of_lower_third_roi_ratio", 0.0)) < float(OF_LOWER_MAX_FOR_UPPER_GUARD)
+        and float(ai_style_prob) < 0.01
+        and int(flux_combined) == 0
+        and int(c2pa_ai) == 0
+    ):
+        points_score -= 1
+        guard_upper_of_dominance = 1
+
     # Fix C: soft_threshold_tighten
     soft_threshold_min_score = 3
     if ai_specific == 0 and int(lower_third_effective) == 0 and clip_prob < 0.55:
@@ -668,6 +714,10 @@ def fuse(
         and int(row.get("broadcast_billboard_trap", 0)) == 0
         and int(row.get("broadcast_pattern_trap", 0)) == 0
         and float(row.get("of_max_area_ratio", 1.0)) < CINEMATIC_MAX_AREA_RATIO
+        and (
+            float(row.get("ai_style_prob", 0.0)) >= CINEMATIC_RESCUE_MIN_CLIP_PROB
+            or int(row.get("of_corner_compact_roi_count", 0)) >= 1
+        )
     )
 
     flux_soft_override = (
@@ -702,6 +752,12 @@ def fuse(
         mode += ";guard_broadcast_score_cap=1"
     if of_penalty_applied:
         mode += ";guard_of_penalty=1"
+    if zero_clip_penalty_applied:
+        mode += ";guard_zero_clip_penalty=1"
+    if guard_large_of_no_clip:
+        mode += ";guard_large_of_no_clip=1"
+    if guard_upper_of_dominance:
+        mode += ";guard_upper_of_dominance=1"
     if tc_conditional_boost_applied:
         mode += ";tc_conditional_boost=1"
     if only_cinematic_guard:
@@ -1330,10 +1386,16 @@ def main() -> None:
                     det = 1
                     mode = mode + ";c2pa_override=1"
 
+                # Poprawka 2: kling_static_ai blokada billboard
+                # Blokuje aktywację gdy detektor statycznych ZV się aktywuje,
+                # ale film zawiera grafiki broadcastowe (lower third, billboard).
+                # Chroni przed FP na nagraniach z overlayami, które mają ZV obszary.
                 kling_static_ai = (
                     int(sig.get("zv_count", 0)) >= 2
                     and float(sig.get("iw_best_similarity", 0.0)) >= 0.40
                     and int(broadcast_trap) == 0
+                    and int(sig.get("broadcast_lower_third_pattern", 0)) == 0
+                    and int(sig.get("broadcast_billboard_pattern", 0)) == 0
                 )
                 if kling_static_ai:
                     det = 1
@@ -1378,18 +1440,25 @@ def main() -> None:
                         det = 0
                         mode = mode + ";guard_lowerthird_without_ai=1"
 
+                # Poprawka A: high_score_override blokada broadcast
+                # Override działa tylko gdy nie ma żadnego trapu broadcastowego oraz
+                # gdy istnieje sygnał ai_specific. Bez ai_specific wysokie score nie może
+                # wygenerować detekcji.
                 high_score_override = 0
                 if (not c2pa_override) and (
                     det == 0
                     and float(score) >= float(HIGH_SCORE_OVERRIDE_THRESHOLD)
-                    and int(broadcast_trap) == 1
+                    and ai_specific == 1
+                    and int(sig.get("broadcast_scoreboard_trap", 0)) == 0
+                    and int(sig.get("broadcast_billboard_trap", 0)) == 0
+                    and int(sig.get("broadcast_pattern_trap", 0)) == 0
                 ):
                     det = 1
                     high_score_override = 1
                     mode = mode + ";high_score_override=1"
                     print(
                         f"  ADV HIGH_SCORE_OVERRIDE: fusion_score={float(score):.3f}, "
-                        "broadcast_trap=1 -> det=1"
+                        "broadcast traps absent -> det=1"
                     )
 
                 eval_row = {
