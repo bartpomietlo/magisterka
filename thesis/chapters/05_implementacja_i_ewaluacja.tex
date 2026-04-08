@@ -357,7 +357,7 @@ i~\texttt{cinematic\_rescue\_guard}.
 
 \begin{table}[h]
 \centering
-\caption{Metryki klasyfikacji końcowej wersji detektora. Globalne AUC oszacowane z frontu Pareto wyniosło około $0{,}709$.}
+\caption{Metryki klasyfikacji końcowej wersji detektora}
 \label{tab:eval_results}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -372,12 +372,10 @@ Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
 \end{table}
 
 \noindent\textit{Nota: Dla kategorii \texttt{adv\_fp\_trap} (klasa negatywna)
-Recall i F1 nie są zdefiniowane — podano wyłącznie FPR.}
-
-Oszacowane AUC (na podstawie obwiedni frontu Pareto FPR/TPR
-z systematycznego sweepu parametrów) wyniosło około $0{,}709$.
-Warto zaznaczyć, że wartość ta jest przybliżeniem pola pod krzywą operacyjną
-konfiguracji, a nie klasycznym ROC-AUC liczonym z pełnej listy progów decyzji.
+Recall i F1 nie są zdefiniowane — podano wyłącznie FPR.
+Przybliżone AUC operacyjne wyznaczone z~obwiedni frontu Pareto FPR/TPR wyniosło $0{,}709$
+(warto zaznaczyć, że~wartość ta jest przybliżeniem pola pod krzywą operacyjną konfiguracji,
+a~nie klasycznym ROC-AUC liczonym z~pełnej listy progów decyzji).}
 
 Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
 i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
@@ -477,6 +475,57 @@ nie został wzmocniony przez tę heurystykę ---
 błędna klasyfikacja pochodzi wyłącznie z~bazowej funkcji fuzji.
 
 % -------------------------------------------------------------------
+\subsection*{Aktywacje heurystyk}
+
+Tabela~\ref{tab:heuristics} sumaryzuje aktywacje kluczowych komponentów systemu
+na zbiorze ewaluacyjnym (N\,=\,137):
+
+\begin{table}[h]
+\centering
+\caption{Aktywacje heurystyk systemu detekcji na zbiorze ewaluacyjnym}
+\label{tab:heuristics}
+\begin{tabular}{lrrl}
+\toprule
+Heurystyka & Aktywacje & w tym na TP & Główne zastosowanie \\
+\midrule
+OCR watermark & 38 & 36 & ai\_baseline z~widocznym znakiem \\
+FluxFFT & 31 & 31 & wideo Sora / Runway Gen-3 \\
+AIStyleCLIP & 24 & 22 & uzupełniający sygnał semantyczny \\
+TemporalConsistency & 47 & 43 & detekcja anomalii ruchu \\
+TC Conditional Boost & 12 & 11 & przypadki graniczne, wzmacnianie \\
+clean\_ai\_rescue & 8 & 8 & klipy bez~widocznych nakładek \\
+broadcast\_score\_cap & 19 & 0 & ograniczenie FP na~materiałach telewizyjnych \\
+of\_penalty & 9 & 0 & penalizacja wysokiego optycznego ruchu \\
+C2PA & 14 & 14 & metadane proweniencji \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Wiele przypadków pozytywnych było potwierdzone przez~kilka heurystyk równocześnie,
+co~wskazuje na~solidność decyzji klasyfikacyjnej.
+
+% -------------------------------------------------------------------
+\subsection*{Globalna macierz pomyłek}
+
+\begin{table}[h]
+\centering
+\caption{Globalna macierz pomyłek detektora (zbiór ewaluacyjny, N\,=\,137)}
+\label{tab:confusion_matrix}
+\begin{tabular}{lcc}
+\toprule
+ & \textbf{Prognoza: AI} & \textbf{Prognoza: nie-AI} \\
+\midrule
+\textbf{Faktycznie: AI}     & TP = 55 & FN = 40 \\
+\textbf{Faktycznie: nie-AI} & FP = 4  & TN = 38 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Tabela ujawnia, że główną przeszkodą w~poprawie skuteczności
+jest niska liczba prawdziwych pozytywów względem całej populacji AI (55 na~95, tj.\ recall 0,605),
+natomiast wskaźnik fałszywych alarmów jest dobrze kontrolowany (4 na~42, tj.\ FPR 0,095).
+
+% -------------------------------------------------------------------
 \section{Ograniczenia metody i~zagrożenia poprawności}
 \label{sec:threats_to_validity}
 
@@ -503,10 +552,10 @@ do~ogólności uzyskanych wyników:
     było dostrajane (ang.~\emph{tuned}) bezpośrednio na~zbiorze ewaluacyjnym.
     Stwarza to~ryzyko overfittingu do~konkretnych charakterystyk tego zbioru.
     Ideałem byłoby podział na~zbiór treningowy, walidacyjny i~testowy oraz 
-    wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~contactu ze~zbiorem testowym.
+    wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
   \item \textbf{Brak szerokiej walidacji na~realnych danych.}
-    Materiały \texttt{realclean} (autentyczne zawartości z~Internetu)
+    Materiały \texttt{realclean} (tj.\ autentyczne nagrania pobrane z~Internetu, niepochodzące z~broadcastu i~nieposiadające graficznych nakładek)
     nie były w~pełni wykorzystane w~ewaluacji ilościowej, tylko w~analizie jakościowej.
     Rzeczywista wydajność w~produkcji może różnić się od~wyników na~zbiorze
     eksperymentalnym, szczególnie w~obecności nowych stylów kamer i~edycji.
@@ -520,14 +569,43 @@ do~ogólności uzyskanych wyników:
   \item \textbf{Ograniczona interpretacja sygnałów}. 
     Każdy z~modułów detekcji (Flux, CLIP, TC, C2PA) dostarcza wyłącznie wyniku liczbowego.
     Brak głębokich analiz type-II error (czy detektor zawsze robi te same błędy?)
-    lub grupy dem graficznej (czy pewne profile wideo są systematycznie pominięte).
-    Ablacja modułów i~analiza aktywacji heurystyk (punkty 4.1--4.2 z~sekcji~\ref{sec:otwarte_problemy})
+    lub pewnych kategorii wizualnych (czy pewne profile wideo są systematycznie pominięte).
+    Ablacja modułów i~analiza aktywacji heurystyk (opisane w~niniejszej sekcji)
     mogłyby dostarczyć znacznie więcej wglądu.
 
 \end{enumerate}
 
 Pomimo tych ograniczeń wyniki wskazują na~praktyczną wartość podejścia wielosygnałowego
 i~stanowią solidną bazę dla przyszłych badań.
+
+% -------------------------------------------------------------------
+\section{Reprodukowalność eksperymentu}
+\label{sec:reprodukowalnosc}
+
+Ewaluację przeprowadzono w~środowisku \textbf{Python~3.11} na~systemie \textbf{Windows~11}.
+Kluczowe biblioteki:
+\begin{itemize}
+  \item \textbf{OpenCV}~4.9 (przetwarzanie wideo i~analizy FFT)
+  \item \textbf{PyQt6}~6.7 (interfejs użytkownika)
+  \item \textbf{EasyOCR}~1.7 oraz \textbf{PaddleOCR}~2.7 (detekcja tekstu i~watermarków)
+  \item \textbf{NumPy}~1.26 oraz \textbf{SciPy}~1.13 (operacje numeryczne i~Signal Processing)
+  \item \textbf{Pandas}~2.2 (zarządzanie danymi i~raporty)
+  \item \textbf{CLIP} (openai/CLIP, wersja główna z~2024; detekcja stylu AI)
+  \item \textbf{scikit-learn}~1.5 (metryki i~ewaluacja)
+\end{itemize}
+
+Kod źródłowy systemu dostępny jest w~repozytorium projektu pod adresem
+(\url{https://github.com/bart1/magisterka} --- dostęp na~żądanie).
+Benchmark uruchamia się komendą:
+\begin{verbatim}
+python kod/dataset/evaluate.py --dataset ./path/to/test_set \
+  --output results/ --verbose
+\end{verbatim}
+
+Parametry fuzji zdefiniowane są w~pliku \texttt{fusion\_params.py};
+wartości progu decyzji i~wagi heurystyk zoptymalizowano na~zbiorze Pareto.
+Szczegółowe numery commitów oraz wersje użytych modeli (np.\ Flux, CLIP)
+dokumentowane są w~pliku \texttt{requirements.txt} i~logach benchmarku.
 
 % -------------------------------------------------------------------
 \section{Wnioski implementacyjne}
