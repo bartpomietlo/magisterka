@@ -12,21 +12,25 @@ komercyjnych.
 Przeprowadzona ewaluacja na~zbiorze 137~plik\'{o}w wideo potwierdzi\l{}a,
 \.{z}e zaproponowany potok wielosygna\l{}owy --- \l{}\k{a}cz\k{a}cy analiz\k{e} OCR,
 median\k{e} temporaln\k{a}, przep\l{}yw optyczny, artefakty FFT
-oraz metadane C2PA --- osika powtarzalne wyniki na~czterech r\'{o}\.{z}nych
+oraz metadane C2PA --- osi\k{a}ga powtarzalne wyniki na~czterech r\'{o}\.{z}nych
 kategoriach testowych. Dla~film\'{o}w AI bez modyfikacji detektor osi\k{a}gn\k{a}\l{}
-recall~$0{,}837$, a~po~przyci\k{e}ciu kadr\'{o}w recall wzr\'{o}s\l{} do~$0{,}923$,
-co~\'{s}wiadczy o~odporno\'{s}ci sygna\l{}u przeplywo-optycznego na~proste operacje
-edycyjne. Wska\'{z}nik fa\l{}szywych alarm\'{o}w wyni\'{o}s\l{}
-$\mathrm{FPR} = 0{,}119$ dla~materia\l{}\'{o}w broadcastowych zawieraj\k{a}cych
-animowane nak\l{}adki dolnej trzeciej --- poni\.{z}ej wyznaczonego
-progu $1/7 \approx 0{,}143$. Precyzja r\'{o}wna~$1{,}000$ we~wszystkich
-kategoriach pozytywnych oznacza brak jakichkolwiek fa\l{}szywych pozytyw\'{o}w
-poza dedykowan\k{a} kategori\k{a} broadcastow\k{a}.
+recall~$0{,}605$, dla~film\'{o}w po~kompresji recall wynios\l{}~$0{,}577$,
+natomiast po~przyci\k{e}ciu kadr\'{o}w spad\l{} do~$0{,}538$. Oznacza to, \.{z}e system
+zachowuje cz\k{e}\'{s}ciow\k{a} odporno\'{s}\'{c} na~proste operacje edycyjne, jednak
+modyfikacje materia\l{}u obni\.{z}aj\k{a} skuteczno\'{s}\'{c} detekcji i~utrudniaj\k{a}
+wykorzystanie cz\k{e}\'{s}ci sygnał\'{o}w diagnostycznych.
+Wska\'{z}nik fa\l{}szywych alarm\'{o}w wyni\'{o}s\l{}
+$\mathrm{FPR} = 0{,}095$ dla~materia\l{}\'{o}w broadcastowych zawieraj\k{a}cych
+animowane nak\l{}adki dolnej trzeciej i~dynamiczn\k{a} grafik\k{e} --- poni\.{z}ej
+wyznaczonego progu $1/7 \approx 0{,}143$. Precyzja na~zbiorze pozytywnym
+wynios\l{}a~$0{,}932$ (55~TP pośród 59~wszystkich próbek pozytywnych),
+przy~czym ka\.{z}da z~kategorii AI bez~modyfikacji wypad\l{}a
+z~wskaźnikiem precision~$1{,}000$.
 
-W~kontra\'{s}cie do~tych wynik\'{o}w, popularne narz\k{e}dzie
+W~porównaniu z~dost\k{e}pnymi narz\k{e}dziami, popularne narz\k{e}dzie
 DetectVideo.ai~zwraca\l{}o wynik~55\% (\textit{inconclusive}) dla~ponad~80\%
-testowanych materia\l{}\'{o}w, w~tym dla~nagra\'{n} autentycznych, co~czyni
-je praktycznie bezuzytecznym do~binarnej klasyfikacji tre\'{s}ci.
+testowanych materia\l{}\'{o}w, co~znacznie utrudnia praktyczne zastosowanie
+w~systemach wymagaj\k{a}cych binarnej decyzji o~zaakceptowaniu tre\'{s}ci.
 Proponowane podej\'{s}cie wycofuje si\k{e} od~tego modelu:
 zamiast wska\'{z}nika procentowego podejmuje jednoznaczn\k{a} decyzj\k{e}
 binarn\k{a} i~dostarcza artefakty diagnostyczne umo\.{z}liwiaj\k{a}ce
