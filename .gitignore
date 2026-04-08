@@ -4,7 +4,7 @@
 desktop.ini
 .DS_Store
 PyCharmMiscProject.iml
-
+*.csv
 # Python
 __pycache__/
 kod/__pycache__/

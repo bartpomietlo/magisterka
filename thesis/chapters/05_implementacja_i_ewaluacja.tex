@@ -357,7 +357,7 @@ i~\texttt{cinematic\_rescue\_guard}.
 
 \begin{table}[h]
 \centering
-\caption{Metryki klasyfikacji końcowej wersji detektora; wartość globalna AUC wyznaczona z frontu Pareto FPR/TPR wyniosła $0{,}709$.}
+\caption{Metryki klasyfikacji końcowej wersji detektora. Globalne AUC oszacowane z frontu Pareto wyniosło około $0{,}709$.}
 \label{tab:eval_results}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -374,8 +374,10 @@ Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
 \noindent\textit{Nota: Dla kategorii \texttt{adv\_fp\_trap} (klasa negatywna)
 Recall i F1 nie są zdefiniowane — podano wyłącznie FPR.}
 
-Wartość globalna AUC wyznaczona na podstawie frontu Pareto FPR/TPR
-z pliku \texttt{pareto\_frontier.csv} wyniosła około $0{,}709$.
+Oszacowane AUC (na podstawie obwiedni frontu Pareto FPR/TPR
+z systematycznego sweepu parametrów) wyniosło około $0{,}709$.
+Warto zaznaczyć, że wartość ta jest przybliżeniem pola pod krzywą operacyjną
+konfiguracji, a nie klasycznym ROC-AUC liczonym z pełnej listy progów decyzji.
 
 Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
 i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
@@ -405,7 +407,7 @@ tego sweepowania. Każdy szary punkt odpowiada jednej testowanej konfiguracji;
 niebieskie punkty tworzą front Pareto --- zbiór konfiguracji,
 dla~których żadna inna nie poprawia jednocześnie obu metryk.
 Czerwona gwiazdka oznacza punkt operacyjny wybranej konfiguracji
-domyślnej: $\mathrm{FPR} = 0{,}095$, $\mathrm{TPR} = 0{,}60$.
+końcowej: $\mathrm{FPR} = 0{,}095$, $\mathrm{TPR} = 0{,}60$.
 Pomarańczowa linia przerywana wyznacza cel projektowy
 $\mathrm{FPR} \leq 1/7 \approx 0{,}143$; zielona strefa pożądana
 zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
@@ -417,7 +419,7 @@ zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
     sweepowania parametrów fuzji. Szare punkty to~wszystkie testowane
     konfiguracje; niebieskie punkty tworzą front Pareto.
     Czerwona gwiazdka ($\mathrm{FPR}=0{,}095$, $\mathrm{TPR}=0{,}60$)
-    odpowiada domyślnej konfiguracji produkcyjnej.
+    odpowiada konfiguracji końcowej.
     Pomarańczowa linia przerywana wyznacza cel projektowy
     $\mathrm{FPR} \leq 1/7 \approx 0{,}143$.
     Punkt operacyjny leży wewnątrz strefy pożądanej i~na~froncie Pareto,
@@ -473,6 +475,59 @@ Ponieważ TC Conditional Boost nie aktywuje się dla~$s \geq 4$
 (warunek \texttt{TC\_ELIGIBLE\_SCORES}), żaden z~tych przypadków
 nie został wzmocniony przez tę heurystykę ---
 błędna klasyfikacja pochodzi wyłącznie z~bazowej funkcji fuzji.
+
+% -------------------------------------------------------------------
+\section{Ograniczenia metody i~zagrożenia poprawności}
+\label{sec:threats_to_validity}
+
+Przeprowadzona ewaluacja podlegała szeregowi ograniczeń, które znajdują się w~bezpośredniej relacji
+do~ogólności uzyskanych wyników:
+
+\begin{enumerate}
+
+  \item \textbf{Zbiór danych i~jego niezrównoważenie.}
+    Zbiór ewaluacyjny zawiera 95~próbek pozytywnych (wideo AI) i~42~próbki negatywne (broadcast).
+    Nierównowaga ta zawyża znaczenie precyzji i~sprawia, że~recall i~FPR są bardziej miarodajne.
+    Ponadto negatywy pochodzą wyłącznie z~jednego źródła (broadcast), co~ogranicza generalność
+    oceny w~stosunku do~innych rodzajów naturalnych zawartości (np.\ dokumentacja, edukacja).
+
+  \item \textbf{Transfer gap między modelami generatywnych.}
+    Część danych pozytywnych pochodzi z~modeli obecnych w~momencie ewaluacji (Runway, Sora).
+    Nowsze modele generatywne mogą produkować artefakty o~innym charakterze, na~które
+    detektor nie został w~pełni trenowany lub dostrojony. Doświadczenia z~literatury
+    (sekcja~\ref{sec:otwarte_problemy}) pokazują spadek AUC o~10--30 punktów procentowych
+    przy testowaniu na~nowych generatorach.
+
+  \item \textbf{Tuning heurystyk na~własnym benchmarku.}
+    Wiele heurystyk (TC Conditional Boost, Cinematic Rescue Guard, broadcast guard)
+    było dostrajane (ang.~\emph{tuned}) bezpośrednio na~zbiorze ewaluacyjnym.
+    Stwarza to~ryzyko overfittingu do~konkretnych charakterystyk tego zbioru.
+    Ideałem byłoby podział na~zbiór treningowy, walidacyjny i~testowy oraz 
+    wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~contactu ze~zbiorem testowym.
+
+  \item \textbf{Brak szerokiej walidacji na~realnych danych.}
+    Materiały \texttt{realclean} (autentyczne zawartości z~Internetu)
+    nie były w~pełni wykorzystane w~ewaluacji ilościowej, tylko w~analizie jakościowej.
+    Rzeczywista wydajność w~produkcji może różnić się od~wyników na~zbiorze
+    eksperymentalnym, szczególnie w~obecności nowych stylów kamer i~edycji.
+
+  \item \textbf{Porównania komercyjnych narzędzi na~różnych próbach.}
+    Każde narzędzie komercyjne było testowane na~innym podzbiorze ze względów logistycznych
+    (limit zapytań, koszt). To uniemożliwia bezpośrednie porównanie 1:1
+    o~charakterze benchmarkowego; wyniki w~sekcji~\ref{sec:tools_comparison}
+    mają charakter orientacyjny, nie porównawczy.
+
+  \item \textbf{Ograniczona interpretacja sygnałów}. 
+    Każdy z~modułów detekcji (Flux, CLIP, TC, C2PA) dostarcza wyłącznie wyniku liczbowego.
+    Brak głębokich analiz type-II error (czy detektor zawsze robi te same błędy?)
+    lub grupy dem graficznej (czy pewne profile wideo są systematycznie pominięte).
+    Ablacja modułów i~analiza aktywacji heurystyk (punkty 4.1--4.2 z~sekcji~\ref{sec:otwarte_problemy})
+    mogłyby dostarczyć znacznie więcej wglądu.
+
+\end{enumerate}
+
+Pomimo tych ograniczeń wyniki wskazują na~praktyczną wartość podejścia wielosygnałowego
+i~stanowią solidną bazę dla przyszłych badań.
 
 % -------------------------------------------------------------------
 \section{Wnioski implementacyjne}
