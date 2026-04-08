@@ -1,4 +1,3 @@
-
 \chapter{Narz\k{e}dzia i~metody detekcji}
 \label{ch:narzedzia}
 
@@ -11,7 +10,7 @@
 \label{sec:zbior_danych}
 
 Do ewaluacji narz\k{e}dzi detekcji tre\'{s}ci generowanych przez sztuczn\k{a}
-inteligencj\k{e} przygotowano zbi\'{o}r 48~film\'{o}w wideo, obejmuj\k{a}cy
+inteligencj\k{e} przygotowano zbi\'{o}r 51~film\'{o}w wideo, obejmuj\k{a}cy
 materia\l{}y syntetyczne wygenerowane przez r\'{o}\.{z}ne modele generatywne,
 materia\l{}y zmanipulowane (deepfake), autentyczne nagrania kamerowe
 oraz materia\l{}y kontrolne.
@@ -49,7 +48,7 @@ Materia\l{}y kontrolne (corner cases)  &  7 & reklamy, recenzje aplikacji \\
 
 R\'{o}\.{z}norodno\'{s}\'{c} modeli generatywnych (9~r\'{o}\.{z}nych system\'{o}w) oraz
 zr\'{o}\.{z}nicowanie styl\'{o}w wizualnych --- od~realistycznych scen ulicznych
-po~abstrakcyjne animacje --- pozwala na~rzetelnn\k{a} ocen\k{e} skuteczno\'{s}ci
+po~abstrakcyjne animacje --- pozwala na~rzeteln\k{a} ocen\k{e} skuteczno\'{s}ci
 narz\k{e}dzi detekcji.
 
 \textbf{Corner cases.}
@@ -111,8 +110,9 @@ Wynik 55\% stanowi de~facto domy\'{s}ln\k{a} odpowied\'{z} ,,nie wiem'' ---
 nie jest to faktyczna ocena zawarto\'{s}ci wizualnej.
 Wy\.{z}szy wynik (72\%) uzyska\l{}y jedynie filmy z~wyra\'{z}nymi
 cechami generatywnymi (abstrakcja, fantasy) oraz zmanipulowany
-dokument, co wskazuje na~dzia\l{}anie oparte g\l{}\'{o}wnie na~analizie
-metadanych, a~nie tre\'{s}ci wizualnej.
+dokument, co~jest sp\'{o}jne z~hipotez\k{a}, \.{z}e narz\k{e}dzie
+opiera si\k{e} g\l{}\'{o}wnie na~analizie metadanych,
+a~nie pe\l{}nej analizie wizualnej.
 
 % \begin{figure}[htbp]
 %   \centering
@@ -214,11 +214,13 @@ komputerow\k{a} jako cech\k{e} generatywn\k{a}.
 
 \subsubsection{Analiza wzorca b\l{}\k{e}d\'{o}w}
 
-Wzorzec fa\l{}szywych alarm\'{o}w jest identyczny z~b\l{}\k{e}dami w\l{}asnego detektora,
-co sugeruje, \.{z}e sk\l{}onno\'{s}\'{c} do~fa\l{}szywych alarm\'{o}w
-na~materia\l{}ach broadcastowych z~animowanymi naklejkami
-stanowi \textbf{systemowe ograniczenie ca\l{}ej klasy detektor\'{o}w}
-opartych na~analizie statystycznej obrazu.
+Wzorzec fa\l{}szywych alarm\'{o}w jest zbli\.{z}ony do~obserwowanego
+w~w\l{}asnym detektorze, co~mo\.{z}e wskazywa\'{c}, \.{z}e wra\.{z}liwo\'{s}\'{c}
+na~materia\l{}y broadcastowe z~animowanymi naklejkami
+stanowi cz\k{e}ste \textbf{wyzwanie dla~detektor\'{o}w opartych
+na~analizie statystycznej obrazu}.
+Ostateczna konkluzja wymaga\l{}aby por\'{o}wnania na~szerszym
+i~ujednoliconym zbiorze danych.
 
 \subsubsection{Por\'{o}wnanie metryk ($N=79$)}
 
@@ -322,7 +324,7 @@ DetectVideo.ai
   & online \\
 \addlinespace[3pt]
 Undetectable.ai
-  & 46 & 86{,}8\% & {\raise0.5ex\hbox{---}} & {\raise0.5ex\hbox{---}} & 0{,}0\%
+  & 46 & 86{,}8\% & {\raise0.5ex\hbox{---}} & {\raise0.5ex\hbox{---}} & 0{,}0\%\textsuperscript{a}
   & wieloklasowy (0--100)
   & online \\
 \addlinespace[3pt]
@@ -336,8 +338,10 @@ AIVideoDetector.com
   & binarny + XAI
   & lokalny \\
 \bottomrule
+\multicolumn{8}{l}{\textsuperscript{a}\small FPR obliczony na~podstawie 1~pr\'{o}bki autentycznej --- warto\'{s}\'{c} orientacyjna.}
 \end{tabular}}
 \end{table}
+
 Metryki komercyjnych serwis\'{o}w i wyniki w\l{}asnego systemu pochodz\k{a} z r\'{o}\.{z}nych
 podzbior\'{o}w testowych oraz z r\'{o}\.{z}nych etap\'{o}w rozwoju detektora,
 dlatego maj\k{a}

@@ -18,16 +18,16 @@ recall~$0{,}605$, dla~film\'{o}w po~kompresji recall wynios\l{}~$0{,}577$,
 natomiast po~przyci\k{e}ciu kadr\'{o}w spad\l{} do~$0{,}538$. Oznacza to, \.{z}e system
 zachowuje cz\k{e}\'{s}ciow\k{a} odporno\'{s}\'{c} na~proste operacje edycyjne, jednak
 modyfikacje materia\l{}u obni\.{z}aj\k{a} skuteczno\'{s}\'{c} detekcji i~utrudniaj\k{a}
-wykorzystanie cz\k{e}\'{s}ci sygnał\'{o}w diagnostycznych.
+wykorzystanie cz\k{e}\'{s}ci sygna\l{}\'{o}w diagnostycznych.
 Wska\'{z}nik fa\l{}szywych alarm\'{o}w wyni\'{o}s\l{}
 $\mathrm{FPR} = 0{,}095$ dla~materia\l{}\'{o}w broadcastowych zawieraj\k{a}cych
 animowane nak\l{}adki dolnej trzeciej i~dynamiczn\k{a} grafik\k{e} --- poni\.{z}ej
-wyznaczonego progu $1/7 \approx 0{,}143$. Precyzja na~zbiorze pozytywnym
-wynios\l{}a~$0{,}932$ (55~TP pośród 59~wszystkich próbek pozytywnych),
-przy~czym ka\.{z}da z~kategorii AI bez~modyfikacji wypad\l{}a
-z~wskaźnikiem precision~$1{,}000$.
+wyznaczonego progu $1/7 \approx 0{,}143$.
+Globalna precyzja detektora wynios\l{}a~$0{,}932$: spo\'{s}r\'{o}d 59~materia\l{}\'{o}w
+sklasyfikowanych jako AI 55~stanowi\l{}o trafienia prawdziwie dodatnie,
+a~4~by\l{}y fa\l{}szywie dodatnie.
 
-W~porównaniu z~dost\k{e}pnymi narz\k{e}dziami, popularne narz\k{e}dzie
+W~por\'{o}wnaniu z~dost\k{e}pnymi narz\k{e}dziami, popularne narz\k{e}dzie
 DetectVideo.ai~zwraca\l{}o wynik~55\% (\textit{inconclusive}) dla~ponad~80\%
 testowanych materia\l{}\'{o}w, co~znacznie utrudnia praktyczne zastosowanie
 w~systemach wymagaj\k{a}cych binarnej decyzji o~zaakceptowaniu tre\'{s}ci.
@@ -39,7 +39,7 @@ weryfikacj\k{e} ka\.{z}dego wykrycia.
 Istotnym wk\l{}adem implementacyjnym jest mechanizm TC Conditional Boost,
 kt\'{o}ry podnosi recall film\'{o}w granicznych bez~podnoszenia FPR,
 wykorzystuj\k{a}c jednoczesn\k{a} ocen\k{e} stylistyczn\k{a} AI
-oraz zabezpieczenie przed~charakterystycznym sygnaturem nak\l{}adek newsowych.
+oraz zabezpieczenie przed~charakterystyczn\k{a} sygnatur\k{a} nak\l{}adek newsowych.
 
 \section{Kierunki dalszych bada\'{n}}
 
@@ -87,7 +87,7 @@ Kierunkiem wartym zbadania jest testowanie detektora wobec technik adversarial,
 takich jak dodawanie szumu gaussowskiego przed~publikacj\k{a}, kompresja
 H.265 z~niskim bitrate oraz preprocessing przez filtry stylistyczne
 (np.\ efekt ,,film grain'').
-Badania w~tym obszarze pozwol\k{a} na~identyfikacj\k{e} najslabszych ogniw
+Badania w~tym obszarze pozwol\k{a} na~identyfikacj\k{e} najs\l{}abszych ogniw
 proponowanego potoku i~ukierunkowanie dalszych prac na~ich wzmocnienie.
 
 \subsection{Metody uczenia maszynowego}
