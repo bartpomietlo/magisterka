@@ -21,6 +21,13 @@ natomiast po~przyci\k{e}ciu kadr\'{o}w spad\l{} do~$0{,}538$. Oznacza to, \.{z}e
 zachowuje cz\k{e}\'{s}ciow\k{a} odporno\'{s}\'{c} na~proste operacje edycyjne, jednak
 modyfikacje materia\l{}u obni\.{z}aj\k{a} skuteczno\'{s}\'{c} detekcji i~utrudniaj\k{a}
 wykorzystanie cz\k{e}\'{s}ci sygna\l{}\'{o}w diagnostycznych.
+
+Przycięcie kadru usuwa lub osłabia sygnały zlokalizowane przy krawędziach obrazu,
+takie jak widoczne watermarki, kompaktowe nakładki narożne czy regiony zainteresowania
+wykorzystywane przez algorytmy OCR, przepływu optycznego oraz analizy wariancji zerowej.
+W rezultacie część materiałów AI traci najbardziej charakterystyczne dowody detekcyjne,
+co jest zgodne z architekturą systemu i nie stanowi przypadkowej anomalii benchmarku.
+
 Wska\'{z}nik fa\l{}szywych alarm\'{o}w wyni\'{o}s\l{}
 $\mathrm{FPR} = 0{,}095$ dla~materia\l{}\'{o}w broadcastowych zawieraj\k{a}cych
 animowane nak\l{}adki dolnej trzeciej i~dynamiczn\k{a} grafik\k{e} --- poni\.{z}ej
@@ -28,6 +35,8 @@ wyznaczonego progu $1/7 \approx 0{,}143$.
 Globalna precyzja detektora wynios\l{}a~$0{,}932$: spo\'{s}r\'{o}d 59~materia\l{}\'{o}w
 sklasyfikowanych jako AI 55~stanowi\l{}o trafienia prawdziwie dodatnie,
 a~4~by\l{}y fa\l{}szywie dodatnie.
+Na przyk\l{}ad, reklama telewizyjna z~ruchomymi elementami graficznymi zosta\l{}a
+b\l{}\k{e}dnie sklasyfikowana jako syntetyczna.
 
 W~obecnej konfiguracji system ma charakter konserwatywny:
 znacznie częściej pomija część materiałów AI (FN\,=\,40)
