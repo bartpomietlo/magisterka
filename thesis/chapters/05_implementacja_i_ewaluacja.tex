@@ -427,29 +427,20 @@ zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
   \label{fig:pareto}
 \end{figure}
 
-Istotna obserwacja wynikająca z~wykresu: front Pareto zredukował się w praktyce
-do pojedynczej unikalnej konfiguracji, która znajduje się w wąskim przedziale
-$\mathrm{FPR} \in [0{,}05;\, 0{,}12]$. To sugeruje, że dalsze zmniejszenie liczby
-fałszywych alarmów jest możliwe jedynie kosztem istotnego obniżenia recall.
-Wybrana konfiguracja maksymalizuje TPR w tym przedziale, pozostając jednocześnie
-po~lewej stronie linii celu.
-
 Optymalizacja konfiguracji fuzji została przeprowadzona jako 
 przebieg parametryczny (sweep parametrów), w którym badano różne ustawienia
 wag i progów w funkcji łączącej sygnały detekcyjne.
 Na wykresie Pareto znormalizowane metryki przedstawiono na osiach: 
 FPR (fałszywe alarmy) oraz TPR/Recall (czułość detekcji).
 
-Front Pareto stanowi zbiór konfiguracji niezdominowanych, czyli takich,
-które nie są jednocześnie gorsze w obu wymiarach względem żadnej innej
-konfiguracji.
-W praktyce oznacza to, że punkt na froncie Pareto reprezentuje optymalny kompromis
-między minimalizacją FPR a maksymalizacją TPR.
-
-Punkt odpowiadający domyślnej konfiguracji systemu jest wyróżniony na wykresie
-jako punkt operacyjny. Jego pozycja blisko brzegu frontu Pareto pokazuje,
-że wybrany próg detekcji nie był arbitralny, lecz opierał się na analizie
-trade-offu między fałszywymi alarmami a czułością.
+Istotna obserwacja wynikająca z~wykresu: testowane konfiguracje skupiały się
+w wąskim przedziale $\mathrm{FPR} \in [0{,}05;\, 0{,}12]$, natomiast front
+Pareto zredukował się do jednej unikalnej konfiguracji. Oznacza to, że w badanym
+sweepie nie znaleziono alternatywnej konfiguracji, która poprawiałaby TPR
+bez pogorszenia FPR. Wybrana konfiguracja maksymalizuje TPR w tym przedziale
+i pozostaje jednocześnie po~lewej stronie linii celu. Jej pozycja blisko brzegu
+frontu Pareto pokazuje, że wybrany próg detekcji nie był arbitralny, lecz
+opierał się na analizie trade-offu między fałszywymi alarmami a czułością.
 
 \subsection*{Analiza błędów}
 
