@@ -58,13 +58,17 @@ without requiring deep technical expertise.
 
 The study evaluates existing detection approaches, analyses their strengths and
 limitations under real-world conditions, and proposes a~fusion-based pipeline
-combining multiple signal-level and semantic-level indicators. The empirical
-evaluation uses 137 video files across four test categories, demonstrating a
-baseline recall of 0.605 and a false positive rate of 0.095 for broadcast-style
-negative samples. The results
-demonstrate that a~layered approach --- integrating spectral analysis, optical flow,
-and watermark detection --- achieves a~practical trade-off between detection sensitivity
-and false positive rate, while highlighting inherent limitations and edge cases.
+combining multiple signal-level and semantic-level indicators. In practical deployment
+scenarios --- such as newsroom verification or content moderation workflows ---
+a~low false positive rate is the primary design constraint, since incorrectly
+flagging authentic broadcast material carries a~higher operational cost than
+missing some synthetic content. With this priority in mind, the empirical
+evaluation uses 137 video files across four test categories, achieving a~baseline
+recall of 0.605 while keeping the false positive rate at 0.095 on broadcast-style
+negative samples. The results demonstrate that a~layered approach --- integrating
+spectral analysis, optical flow, and watermark detection --- achieves a~practical
+trade-off between detection sensitivity and false positive rate, while highlighting
+inherent limitations and edge cases.
 The findings contribute to the broader effort of building trustworthy, practically
 deployable tools for multimedia authentication in the context of growing AI-driven disinformation.
 \end{abstract}
@@ -77,7 +81,7 @@ deployable tools for multimedia authentication in the context of growing AI-driv
 \begin{abstract}
 Gwa\l{}towny rozw\'{o}j generatywnej sztucznej inteligencji przyczyni\l{} si\k{e} do~znacz\k{a}cego
 wzrostu produkcji syntetycznych medi\'{o}w, w~tym obraz\'{o}w i~film\'{o}w generowanych przez
-modele AI, kt\'\{o}re w~coraz wi\k{e}kszym stopniu staj\k{a} si\k{e} nieodr\'\{o}\.{z}nialne od~tre\'{s}ci
+modele AI, kt\'{\o}re w~coraz wi\k{e}kszym stopniu staj\k{a} si\k{e} nieodr\'{\o}\.{z}nialne od~tre\'{s}ci
 autentycznych. Zjawisko to stanowi powa\.{z}ne zagro\.{z}enie dla integralno\'{s}ci debaty
 publicznej oraz wiarygodno\'{s}ci informacji wizualnej w~dobie cyfrowej. Z~tego powodu
 znacz\k{a}ce wysi\l{}ki badawczo-rozwojowe s\k{a} kierowane na~wszystkie aspekty wykrywania
@@ -89,12 +93,18 @@ przeciwdzia\l{}ania dezinformacji wizualnej, ze~szczeg\'{o}lnym uwzgl\k{e}dnieni
 wykrywania obraz\'{o}w generowanych przez sztuczn\k{a} inteligencj\k{e} oraz roli
 cyfrowych znak\'{o}w wodnych. Badaniu poddano zar\'{o}wno widzialne, jak i~niewidzialne
 metody znakowania tre\'{s}ci jako mechanizmy weryfikacji pochodzenia i~autentyczno\'{s}ci
-multimedi\'{o}w. Istotn\k{a} obserwacj\k{a} motywuj\k{a}c\k{a} niniejsze badania jest brak
-\l{}atwo dost\k{e}pnych, dobrze zintegrowanych zestaw\'{o}w narz\k{e}dzi, kt\'{o}re umo\.{z}liwia\l{}yby
-praktyczne wykrywanie syntetycznych tre\'{s}ci wizualnych bez~konieczno\'{s}ci posiadania
-g\l{}\k{e}bokiej wiedzy technicznej.
+multimedi\'{o}w. W~praktyce brakuje \l{}atwo dost\k{e}pnych, dobrze zintegrowanych
+narz\k{e}dzi, kt\'{o}re umo\.{z}liwia\l{}yby skuteczne wykrywanie syntetycznych tre\'{s}ci
+wizualnych bez konieczno\'{s}ci posiadania g\l{}\k{e}bokiej wiedzy technicznej.
 
-W badaniach wykorzystano 137 plików wideo w czterech kategoriach testowych; podstawowy recall wyniósł 0,605, a wskaźnik fałszywych alarmów dla materiałów broadcastowych osiągnął 0,095.
+W~praktycznych scenariuszach zastosowania --- takich jak weryfikacja materia\l{}\'{o}w
+w~redakcjach czy moderacja tre\'{s}ci --- niski wska\'{z}nik fa\l{}szywych alarm\'{o}w
+stanowi g\l{}\'{o}wne ograniczenie projektowe, gdy\.{z} b\l{}\k{e}dne oznaczenie
+autentycznego materia\l{}u broadcastowego niesie wy\.{z}szy koszt operacyjny ni\.{z}
+przepuszczenie cz\k{e}\'{s}ci tre\'{s}ci syntetycznych. Maj\k{a}c ten priorytet na~uwadze,
+w~badaniach wykorzystano 137 plik\'{o}w wideo w~czterech kategoriach testowych;
+podstawowy recall wyni\'{o}s\l{} 0,605, a~wska\'{z}nik fa\l{}szywych alarm\'{o}w
+dla materia\l{}\'{o}w broadcastowych osi\k{a}gn\k{a}\l{} 0,095.
 W~pracy dokonano oceny istniej\k{a}cych podej\'{s}\'{c} detekcyjnych, przeanalizowano
 ich mocne i~s\l{}abe strony w~warunkach rzeczywistych oraz zaproponowano
 potok przetwarzania oparty na~fuzji wielu wska\'{z}nik\'{o}w na~poziomie
