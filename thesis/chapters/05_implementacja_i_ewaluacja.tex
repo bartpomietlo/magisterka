@@ -373,15 +373,9 @@ Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
 
 \noindent\textit{Nota: Dla kategorii \texttt{adv\_fp\_trap} (klasa negatywna)
 Recall i F1 nie są zdefiniowane — podano wyłącznie FPR.
-Przybliżone AUC operacyjne wyznaczone z~obwiedni frontu Pareto FPR/TPR wyniosło $0{,}709$.
-Warto podkreślić, że przybliżone AUC operacyjne ma w tym badaniu charakter pomocniczy,
-ponieważ zostało oszacowane z ograniczonej liczby konfiguracji sweepu,
-a nie z pełnej krzywej ROC wyznaczonej dla ciągłego klasyfikatora.
-Sweep objął \textbf{54 konfiguracji} parametrów fuzji;
-spośród nich \textbf{1} wszedł na front Pareto.
-Raportowane AUC~$=~0{,}709$ należy interpretować jako przybliżoną miarę operacyjną,
-a~nie klasyczne ROC-AUC ciągłego klasyfikatora~--- wyznaczono je
-jako pole pod obwiednią frontu Pareto FPR/TPR, nie z~pełnej krzywej progów decyzji.}
+Warto podkreślić, że system jest klasyfikatorem binarnym z~jednym progiem decyzji,
+nie klasyfikatorem probabilistycznym --- nie ma pełnej krzywej ROC ani AUC.
+System osiąga FPR = 0,095 i Recall = 0,58–0,61 na zbiorze ewaluacyjnym.}
 
 Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
 i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
