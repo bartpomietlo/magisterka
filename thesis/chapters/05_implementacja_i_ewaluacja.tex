@@ -52,7 +52,7 @@ na~publicznych specyfikacjach standardu C2PA opracowanego przez
 \textit{Coalition for Content Provenance and Authenticity}.
 W~części badawczej uwzględniono również wpływ systemów
 \textbf{SynthID} (Google DeepMind) na~materiały generowane przez popularne
-generatory, co~pozwoliło zebrać własny detektor z~rozwiązaniami
+generatory, co~pozwoliło zestawić własny detektor z~rozwiązaniami
 opartymi na~znakach osadzanych bezpośrednio w~procesie generacji.
 
 % -------------------------------------------------------------------
@@ -531,7 +531,7 @@ do~ogólności uzyskanych wyników:
     Ponadto negatywy pochodzą wyłącznie z~jednego źródła (broadcast), co~ogranicza generalność
     oceny w~stosunku do~innych rodzajów naturalnych zawartości (np.\ dokumentacja, edukacja).
 
-  \item \textbf{Transfer gap między modelami generatywnych.}
+  \item \textbf{Transfer gap między modelami generatywnymi.}
     Część danych pozytywnych pochodzi z~modeli obecnych w~momencie ewaluacji (Runway, Sora).
     Nowsze modele generatywne mogą produkować artefakty o~innym charakterze, na~które
     detektor nie został w~pełni trenowany lub dostrojony. Doświadczenia z~literatury
@@ -542,7 +542,7 @@ do~ogólności uzyskanych wyników:
     Wiele heurystyk (TC Conditional Boost, Cinematic Rescue Guard, broadcast guard)
     było dostrajane (ang.~\emph{tuned}) bezpośrednio na~zbiorze ewaluacyjnym.
     Stwarza to~ryzyko overfittingu do~konkretnych charakterystyk tego zbioru.
-    Ideałem byłoby podział na~zbiór treningowy, walidacyjny i~testowy oraz 
+    Ideałem byłby podział na~zbiór treningowy, walidacyjny i~testowy oraz 
     wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
   \item \textbf{Brak szerokiej walidacji na~realnych danych.}
@@ -553,8 +553,8 @@ do~ogólności uzyskanych wyników:
 
   \item \textbf{Porównania komercyjnych narzędzi na~różnych próbach.}
     Każde narzędzie komercyjne było testowane na~innym podzbiorze ze względów logistycznych
-    (limit zapytań, koszt). To uniemożliwia bezpośrednie porównanie 1:1
-o~charakterze benchmarkowego; wyniki w~sekcji~\ref{sec:porownanie_zbiorcze}
+    (limit zapytań, koszt). To uniemożliwia bezpośrednie benchmarkowe porównanie 1:1
+o~charakterze orientacyjnym; wyniki w~sekcji~\ref{sec:porownanie_zbiorcze}
     mają charakter orientacyjny, nie porównawczy.
 
   \item \textbf{Ograniczona interpretacja sygnałów}. 
