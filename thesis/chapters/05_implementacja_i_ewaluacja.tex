@@ -427,20 +427,12 @@ zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
   \label{fig:pareto}
 \end{figure}
 
-Optymalizacja konfiguracji fuzji została przeprowadzona jako 
-przebieg parametryczny (sweep parametrów), w którym badano różne ustawienia
-wag i progów w funkcji łączącej sygnały detekcyjne.
-Na wykresie Pareto znormalizowane metryki przedstawiono na osiach: 
-FPR (fałszywe alarmy) oraz TPR/Recall (czułość detekcji).
-
 Istotna obserwacja wynikająca z~wykresu: testowane konfiguracje skupiały się
 w wąskim przedziale $\mathrm{FPR} \in [0{,}05;\, 0{,}12]$, natomiast front
 Pareto zredukował się do jednej unikalnej konfiguracji. Oznacza to, że w badanym
 sweepie nie znaleziono alternatywnej konfiguracji, która poprawiałaby TPR
 bez pogorszenia FPR. Wybrana konfiguracja maksymalizuje TPR w tym przedziale
-i pozostaje jednocześnie po~lewej stronie linii celu. Jej pozycja blisko brzegu
-frontu Pareto pokazuje, że wybrany próg detekcji nie był arbitralny, lecz
-opierał się na analizie trade-offu między fałszywymi alarmami a czułością.
+i pozostała jednocześnie na~froncie Pareto.
 
 \subsection*{Analiza błędów}
 
