@@ -508,6 +508,30 @@ co potwierdza jej użyteczność jako ścieżki ratunkowej dla „czystych” ma
 \end{tabular}
 \end{table}
 
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+  \definecolor{lightblue}{RGB}{173,216,230}
+  \definecolor{mediumblue}{RGB}{70,130,180}
+  \definecolor{darkblue}{RGB}{0,0,139}
+  \fill[lightblue] (0,0) rectangle (2,2);
+  \fill[mediumblue] (2,0) rectangle (4,2);
+  \fill[darkblue] (0,2) rectangle (2,4);
+  \fill[mediumblue] (2,2) rectangle (4,4);
+  \draw[black, thick] (0,0) grid (4,4);
+  \node at (1,3) {\textbf{55}};
+  \node at (3,3) {\textbf{40}};
+  \node at (1,1) {\textbf{4}};
+  \node at (3,1) {\textbf{38}};
+  \node[anchor=north] at (1,4.2) {\textbf{Faktycznie: AI}};
+  \node[anchor=north] at (3,4.2) {\textbf{Faktycznie: nie-AI}};
+  \node[anchor=west, rotate=90] at (-0.2,3) {\textbf{Prognoza: AI}};
+  \node[anchor=west, rotate=90] at (-0.2,1) {\textbf{Prognoza: nie-AI}};
+\end{tikzpicture}
+\caption{Graficzna reprezentacja globalnej macierzy pomyłek detektora (zbiór ewaluacyjny, N\,=\,137)}
+\label{fig:confusion_matrix_heatmap}
+\end{figure}
+
 \noindent Tabela ujawnia, że główną przeszkodą w~poprawie skuteczności
 jest niska liczba prawdziwych pozytywów względem całej populacji AI (55 na~95, tj.\ recall 0,605),
 natomiast wskaźnik fałszywych alarmów jest dobrze kontrolowany (4 na~42, tj.\ FPR 0,095).
