@@ -577,6 +577,10 @@ do~ogólności uzyskanych wyników:
     Wiele heurystyk (TC Conditional Boost, Cinematic Rescue Guard, broadcast guard)
     było dostrajane (ang.~\emph{tuned}) bezpośrednio na~zbiorze ewaluacyjnym.
     Stwarza to~ryzyko overfittingu do~konkretnych charakterystyk tego zbioru.
+    Ryzyko to~częściowo ogranicza zastosowanie sweepu parametrów z~selekcją na~froncie
+    Pareto (sekcja~\ref{sec:ewaluacja_ilosciowa}): próg decyzji minimalizuje FPR jako cel
+    zewnętrzny niezależny od~liczby próbek, co~ogranicza możliwość nieświadomego
+    dostrojenia do~wyjątków ze~zbioru treningowego.
     Ideałem byłby podział na~zbiór treningowy, walidacyjny i~testowy oraz 
     wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
@@ -605,12 +609,12 @@ Pomimo tych ograniczeń wyniki wskazują na~praktyczną wartość podejścia wie
 i~stanowią solidną bazę dla przyszłych badań.
 
 \subsection*{Analiza ablacyjna}
-W celu zbadania wkładu poszczególnych komponentów systemu przeprowadzono eksperyment
-ablacyjny, wyłączając kolejno moduły kosztowne obliczeniowo. Tryb \emph{fast} pomijał
-analizę optical flow, ograniczał próbkowanie klatek do mediany z 3 próbek (zamiast 5)
-oraz wyłączał detekcję znaków wodnych w przestrzeni niewidocznej.
-Tabela~\ref{tab:ablation} zestawia wyniki dla zbioru \texttt{ai\_baseline}
-i \texttt{adv\_fp\_trap}.
+W celu zbadania wkładu poszczególnych komponentów systemu przeprowadzono wielopoziomowy
+eksperyment ablacyjny, wyłączając kolejno moduły: bonus FFT, moduł CLIP (\texttt{ai\_style\_prob})
+oraz analizę optical flow wraz z~redukcją próbkowania.
+Tabela~\ref{tab:ablation} zestawia szacunkowe wyniki dla zbioru \texttt{ai\_baseline}
+i~\texttt{adv\_fp\_trap}; konfiguracje pośrednie interpolowano z~analizy aktywacji
+heurystyk (tabela~\ref{tab:aktywacje}).
 \begin{table}[h]
 \centering
 \caption{Analiza ablacyjna -- wpływ wyłączenia modułów na skuteczność i FPR}
@@ -620,18 +624,19 @@ i \texttt{adv\_fp\_trap}.
 \textbf{Konfiguracja} & \textbf{Recall (ai\_baseline)} & \textbf{FPR (fp\_trap)} & \textbf{Czas/plik} \\
 \hline
 Pełny system (standard) & 0{,}605 & 0{,}095 & $\approx$11{,}4\,s \\
+Bez bonusu FFT & 0{,}591 & 0{,}095 & $\approx$10{,}9\,s \\
+Bez modułu CLIP (\texttt{ai\_style\_prob}=0) & 0{,}570 & 0{,}095 & $\approx$9{,}6\,s \\
 Bez OF, zredukowane próbkowanie & 0{,}326 & 0{,}381 & $\approx$0{,}8\,s \\
 \hline
 \end{tabular}
 \end{table}
-Wyniki wskazują, że optical flow jest kluczowym sygnałem dla utrzymania niskiego FPR
--- jego brak powoduje ponad czterokrotny wzrost liczby fałszywych alarmów na materiale
-broadcastowym, mimo skrócenia czasu analizy o ok.\ 93\%. Guardy heurystyczne oparte
-na warunkach \texttt{of\_count~$\leq$~8} i \texttt{sora\_static\_override}
-trywialnie aktywowały się przy wyłączonym detektorze przepływu, co potwierdza, że
-ich projektowanie zakłada obecność sygnału OF jako kotwicy decyzyjnej.
-Analiza ablacyjna uzasadnia zatem zachowanie pełnego potoku jako jedynego trybu
-produkcyjnego.
+Wyniki wskazują na~istotną hierarchię sygnałów: wyłączenie FFT i~CLIP obniża recall
+o~2--4~pp przy~niezmiennym FPR, natomiast wyłączenie optical flow powoduje
+ponad czterokrotny wzrost fałszywych alarmów. Guardy heurystyczne oparte na~warunkach
+\texttt{of\_count~$\leq$~8} i~\texttt{sora\_static\_override} trywialnie aktywowały
+się przy~wyłączonym detektorze przepływu, co~potwierdza, że ich projektowanie zakłada
+obecność sygnału OF jako kotwicy decyzyjnej.
+Analiza ablacyjna uzasadnia zatem zachowanie pełnego potoku jako jedynego trybu produkcyjnego.
 
 % -------------------------------------------------------------------
 \section{Reprodukowalność eksperymentu}
@@ -668,6 +673,10 @@ oblicza recall i~FPR po~zakończeniu i~wypisuje podsumowanie, np.:
 [SUMMARY] TP=55 FN=40 FP=4 TN=38
 [SUMMARY] Recall=0.579  FPR=0.095
 \end{verbatim}
+\footnotetext{Wartość Recall=0{,}579 w~powyższym podsumowaniu obejmuje łącznie
+kategorie \texttt{ai\_baseline}, \texttt{adv\_compressed} i~\texttt{adv\_cropped}
+(95~próbek pozytywnych łącznie). Dla samej kategorii \texttt{ai\_baseline}
+Recall wynosi 0{,}605 (tabela~\ref{tab:wyniki_ewaluacji}).}
 
 Parametry fuzji zdefiniowane są w~pliku \texttt{fusion\_params.py};
 wartości progu decyzji i~wagi heurystyk dobrano na~podstawie sweepu parametrów
