@@ -1,5 +1,11 @@
 \chapter{Implementacja i~ewaluacja systemu detekcji}
 
+Projekt systemu detekcji został oparty na analizie wymagań praktycznych aplikacji,
+takich jak niski współczynnik fałszywych alarmów i łatwość użycia. Wybór modularnej
+architektury pozwala na łatwe rozszerzanie o nowe detektory, podczas gdy integracja
+technik na poziomie sygnałowym i semantycznym zapewnia zrównoważony kompromis
+między czułością a niezawodnością.
+
 Celem implementacji było zbudowanie praktycznego narzędzia do~wsadowej analizy
 \textbf{plików wideo} pod~kątem obecności jawnych i~ukrytych znaków wodnych,
 metadanych pochodzenia oraz artefaktów typowych dla~materiałów wygenerowanych
@@ -525,6 +531,9 @@ natomiast wskaźnik fałszywych alarmów jest dobrze kontrolowany (4 na~42, tj.\
 Z punktu widzenia praktycznego oznacza to, że obecna konfiguracja systemu
 jest konserwatywna: znacznie częściej pomija część materiałów AI
 niż generuje fałszywe alarmy na materiałach autentycznych.
+Należy jednak pamiętać, że ze względu na niewielki rozmiar zbioru danych (N\,=\,137),
+przedziały ufności dla tych wskaźników są szerokie, co czyni wyniki charakterem
+pilotażowym i wymagającym dalszej walidacji na większych zbiorach.
 
 % -------------------------------------------------------------------
 \section{Ograniczenia metody i~zagrożenia poprawności}
