@@ -139,11 +139,24 @@ dotycz\k{a}ce oznaczania tre\'{s}ci syntetycznych~\cite{EUAIAct2024}.
 \subsection{Kierunek regulacyjny i~polityka publicznego zaufania}
 
 W~szerokim kontek\'{s}cie spo\l{}ecznym, kierunek rozwoju detekcji deepfake'\'{o}w
-zmierza w~stron\k{e} wi\k{e}kszej transparentno\'{s}ci \l{}a\'{n}cucha pochodzenia tre\'{s}ci
+zmierza w~stron\k{e} wi\k{e}kszej transparentno\'{s}ci \l{}\'{n}cucha pochodzenia tre\'{s}ci
 (provenance) oraz odpowiedzialno\'{s}ci platform cyfrowych za~rozpowszechnianie
-materia\l{}\'{o}w wprowadzaj\k{a}cych w~b\l{}\k{a}d. Komisja Europejska w~ramach
+materia\l{}\'{o}w wprowadzaj\k{a}cych w~b\l{}\k{e}d. Komisja Europejska w~ramach
 AI Act~\cite{EUAIAct2024} wprowadza wymagania oznaczania tre\'{s}ci syntetycznych,
 podobnie jak inicjatywy bran\.{z}owe takie jak C2PA czy SynthID. Platformy
 spo\l{}eczno\'{s}ciowe (Meta, Google, TikTok) inwestuj\k{a} w~narz\k{e}dzia moderacji
 AI, aby zapobiega\'{c} dezinformacji, co~wskazuje na~rosn\k{a}c\k{a} rol\k{e}
 technologii detekcyjnych w~ochronie demokracji cyfrowej.
+
+\subsection{Internacjonalizacja interfejsu i~komunikat\'{o}w}
+
+Obecna implementacja aplikacji pos\l{}uguje si\k{e} wy\l{}\k{a}cznie j\k{e}zykiem polskim
+zar\'{o}wno w~interfejsie graficznym GUI, jak i~w~komunikatach diagnostycznych
+generowanych przez konsol\k{e} log\'{o}w. W~kontek\'{s}cie ewentualnego udost\k{e}pnienia
+narz\k{e}dzia szerszemu gronu odbiorc\'{o}w --- w~szczeg\'{o}lno\'{s}ci redakcjom
+i~organizacjom fact-checkingowym spoza Polski --- naturalnym kierunkiem
+rozwoju jest wprowadzenie mechanizmu internacjonalizacji (i18n) opartego
+na~plikach lokalizacyjnych \texttt{.po}/\texttt{.mo} lub s\l{}ownikach JSON.
+Priorytetem by\l{}oby dodanie pe\l{}nej wersji angloj\k{e}zycznej interfejsu PyQt6
+oraz ujednolicenie komunikat\'{o}w log\'{o}w do~j\k{e}zyka angielskiego jako domy\'{s}lnego,
+z~mo\.{z}liwo\'{s}ci\k{a} prze\l{}\k{a}czania w~ustawieniach aplikacji.
