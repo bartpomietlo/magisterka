@@ -54,9 +54,9 @@ W~implementacji rozróżniono trzy kanały weryfikacji:
 \begin{itemize}
   \item \textbf{Widoczny watermark} --- detekcja tekstu i~znaczników wizualnych
     przez OCR oraz analizę mediany temporalnej i~regionów o~niskim ruchu.
-  \item \textbf{Niewidoczny watermark} --- sygnał inferowany przez
+  \item \textbf{Niewidoczny watermark} --- sygnał wnioskowany na podstawie
     \texttt{c2pa\_detector} i~analizę residuum/artefaktów sygnałowych
-    (FFT i~spójność temporalna), bez~gwarantowanego odczytu payloadu.
+    (FFT i~spójność temporalna), bez~gwarantowanego odczytu ładunku informacyjnego.
   \item \textbf{Proweniencja} --- walidacja manifestu C2PA
     (\textit{Content Credentials}) i~metadanych pochodzenia pliku.
 \end{itemize}
@@ -269,7 +269,7 @@ TC Conditional Boost (\textit{Temporal Consistency Boost}). Jest to~reguła
 późnej fuzji działająca na~przypadkach granicznych --- filmach, których
 wynik po~zsumowaniu wszystkich sygnałów mieści się w~przedziale $s \in \{2, 3\}$
 punktów, co~bez~dodatkowej interwencji skutkowałoby klasyfikacją FN.
-Formalnie jest to heurystyka \textit{late-fusion} oparta na warunkowym
+Formalnie jest to heurystyka późnej fuzji oparta na warunkowym
 wzmocnieniu wyniku klasyfikacji o~$+1$ punkt przy jednoczesnym spełnieniu
 warunków temporalnych i~stylometrycznych.
 
@@ -319,7 +319,7 @@ bez~rzeczywistych cech generatywnych. Po~drugie, ścieżka
 o~bogatym ruchu kamerowym (Runway Gen3, Luma Modify) --- wymaga spełnienia
 co~najmniej jednego z~warunków: $p_\text{AI} \geq \texttt{CINEMATIC\_RESCUE\_MIN\_CLIP\_PROB} = 0{,}20$
 lub obecności kompaktowej narożnej nakładki (\texttt{of\_corner\_compact\_roi\_count}~$\geq 1$).
-Formalnie jest to heurystyka ochronna typu \textit{false-positive guard},
+Formalnie jest to heurystyka ochronna ograniczająca fałszywe alarmy,
 która ogranicza aktywację ścieżki kinematycznej bez~silnego potwierdzenia
 sygnałami specyficznymi dla~AI.
 Dzięki temu nagrania w~rodzaju \enquote{Ginza in Tokyo} czy teledyski
@@ -637,12 +637,12 @@ do~ogólności uzyskanych wyników:
   \item \textbf{Porównania komercyjnych narzędzi na~różnych próbach.}
     Każde narzędzie komercyjne było testowane na~innym podzbiorze ze względów logistycznych
     (limit zapytań, koszt). To uniemożliwia bezpośrednie benchmarkowe porównanie 1:1
-o~charakterze orientacyjnym; wyniki w~sekcji~\ref{sec:porownanie_zbiorcze}
-    mają charakter orientacyjny, nie porównawczy.
+    i~powoduje, że wyniki w~sekcji~\ref{sec:porownanie_zbiorcze}
+    mają charakter orientacyjny, a~nie porównawczy.
 
   \item \textbf{Ograniczona interpretacja sygnałów}. 
     Każdy z~modułów detekcji (Flux, CLIP, TC, C2PA) dostarcza wyłącznie wyniku liczbowego.
-    Brak głębokich analiz type-II error (czy detektor zawsze robi te same błędy?)
+    Brak pogłębionych analiz błędów II rodzaju (czy detektor zawsze popełnia te same błędy?)
     lub pewnych kategorii wizualnych (czy pewne profile wideo są systematycznie pominięte).
     Ablacja modułów i~analiza aktywacji heurystyk (opisane w~niniejszej sekcji)
     mogłyby dostarczyć znacznie więcej wglądu.
