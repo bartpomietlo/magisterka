@@ -393,6 +393,8 @@ Kategoria & Opis & $N$ \\
 Tabela~\ref{tab:eval_results} przedstawia wyniki końcowej wersji detektora
 po~wprowadzeniu poprawek \texttt{high\_score\_override\_guard}
 i~\texttt{cinematic\_rescue\_guard}.
+Kategoria \texttt{adv\_fp\_trap} jest zbiorem wyłącznie negatywnym,
+dlatego metryka F1 nie jest dla niej wyznaczana.
 
 \begin{table}[h]
 \centering
@@ -597,7 +599,7 @@ do~ogólności uzyskanych wyników:
     przy testowaniu na~nowych generatorach.
 
   \item \textbf{Tuning heurystyk na~własnym benchmarku.}
-    Wiele heurystyk, takich jak TC Conditional Boost, Cinematic Rescue Guard
+    Wiele heurystyk, takich jak TC Conditional Boost, Cinematic Path Guard
     i~broadcast guard, dostrajano bezpośrednio na~własnym zbiorze ewaluacyjnym.
     Stwarza to~ryzyko częściowego przeuczenia do~charakterystyki benchmarku,
     ograniczone poprzez systematyczny sweep parametrów fuzji i~wybór konfiguracji
