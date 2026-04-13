@@ -49,14 +49,14 @@ W~części badawczej uwzględniono również wpływ systemów
 generatory, co~pozwoliło zestawić własny detektor z~rozwiązaniami
 opartymi na~znakach osadzanych bezpośrednio w~procesie generacji.
 
-\paragraph{Mapa kanałów watermarkingu i~proweniencji.}
+\subsubsection*{Mapa kanałów watermarkingu i~proweniencji}
 W~implementacji rozróżniono trzy kanały weryfikacji:
 \begin{itemize}
   \item \textbf{Widoczny watermark} --- detekcja tekstu i~znaczników wizualnych
     przez OCR oraz analizę mediany temporalnej i~regionów o~niskim ruchu.
-  \item \textbf{Niewidoczny watermark} --- sygnał wnioskowany na podstawie
-    \texttt{c2pa\_detector} i~analizę residuum/artefaktów sygnałowych
-    (FFT i~spójność temporalna), bez~gwarantowanego odczytu ładunku informacyjnego.
+  \item \textbf{Niewidoczny watermark} --- sygnał wnioskowany pośrednio na podstawie anomalii residuum i~artefaktów sygnałowych
+    (FFT, spójność temporalna) oraz wyników \texttt{c2pa\_detector}; system nie dekoduje ukrytego ładunku informacyjnego
+    ani nie gwarantuje identyfikacji konkretnego schematu znakowania.
   \item \textbf{Proweniencja} --- walidacja manifestu C2PA
     (\textit{Content Credentials}) i~metadanych pochodzenia pliku.
 \end{itemize}
@@ -794,10 +794,3 @@ interfejsu, czytelność raportowania i~dostępność
 artefaktów diagnostycznych --- szczególnie przy~analizie trudnych
 przypadków, w~których automatyczna decyzja wymaga ludzkiej weryfikacji.
 
-Iteracyjna natura projektu ujawniła też~istotną asymetrię w~dostępności danych
-testowych: nagrania broadcastowe z~planszami informacyjnymi stanowią
-znacznie trudniejszy przypadek graniczny niż typowe materiały AI
-z~widocznym watermarkiem. W~kolejnych etapach rozwoju systemu warto
-rozważyć rozszerzenie zbioru negatywnego o~materiały z~dynamicznym
-tekstem ekranowym (transmisje esportowe, relacje giełdowe),
-które nie były reprezentowane w~obecnym zbiorze ewaluacyjnym.
