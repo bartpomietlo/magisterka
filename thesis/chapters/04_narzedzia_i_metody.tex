@@ -394,8 +394,14 @@ i~metadane C2PA.
   \item \textbf{Kr\'{o}tkie klipy} --- materia\l{}y poni\.{z}ej 5~sekund
         dostarczaj\k{a} niewystarczaj\k{a}cej liczby klatek do~analizy.
   \item \textbf{Blind spot: lower thirds i~AR} ---
-        FPR\,=\,16{,}2\% dla materia\l{}\'{o}w
-        z~animowanymi naklejkami broadcastowymi.
+        FPR całkowity wynosi 16{,}2\%, przy~czym wszystkie fałszywe alarmy
+        dotyczą materiałów z~animowanymi naklejkami broadcastowymi.
   \item \textbf{Ograniczenia generalizacji} --- gorsza skuteczno\'{s}\'{c}
         dla modeli nieobj\k{e}tych zbiorem treningowym.
 \end{itemize}
+
+\smallskip
+\noindent
+Opis powyżej dotyczy wersji porównawczej; pełna implementacja opisana w~rozdziale~5
+różni się zestawem heurystyk i~osiąga niższy FPR dzięki wprowadzeniu mechanizmów
+TC Conditional Boost i~Cinematic Path Guard.
