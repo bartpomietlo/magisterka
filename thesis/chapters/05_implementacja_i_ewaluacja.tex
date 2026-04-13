@@ -49,6 +49,18 @@ W~części badawczej uwzględniono również wpływ systemów
 generatory, co~pozwoliło zestawić własny detektor z~rozwiązaniami
 opartymi na~znakach osadzanych bezpośrednio w~procesie generacji.
 
+\paragraph{Mapa kanałów watermarkingu i~proweniencji.}
+W~implementacji rozróżniono trzy kanały weryfikacji:
+\begin{itemize}
+  \item \textbf{Widoczny watermark} --- detekcja tekstu i~znaczników wizualnych
+    przez OCR oraz analizę mediany temporalnej i~regionów o~niskim ruchu.
+  \item \textbf{Niewidoczny watermark} --- sygnał inferowany przez
+    \texttt{c2pa\_detector} i~analizę residuum/artefaktów sygnałowych
+    (FFT i~spójność temporalna), bez~gwarantowanego odczytu payloadu.
+  \item \textbf{Proweniencja} --- walidacja manifestu C2PA
+    (\textit{Content Credentials}) i~metadanych pochodzenia pliku.
+\end{itemize}
+
 % -------------------------------------------------------------------
 \section{Architektura aplikacji i~GUI}
 
@@ -257,6 +269,9 @@ TC Conditional Boost (\textit{Temporal Consistency Boost}). Jest to~reguła
 późnej fuzji działająca na~przypadkach granicznych --- filmach, których
 wynik po~zsumowaniu wszystkich sygnałów mieści się w~przedziale $s \in \{2, 3\}$
 punktów, co~bez~dodatkowej interwencji skutkowałoby klasyfikacją FN.
+Formalnie jest to heurystyka \textit{late-fusion} oparta na warunkowym
+wzmocnieniu wyniku klasyfikacji o~$+1$ punkt przy jednoczesnym spełnieniu
+warunków temporalnych i~stylometrycznych.
 
 Mechanizm zwiększa wynik o~jeden punkt, gdy spełnione są jednocześnie
 trzy warunki:
@@ -304,6 +319,9 @@ bez~rzeczywistych cech generatywnych. Po~drugie, ścieżka
 o~bogatym ruchu kamerowym (Runway Gen3, Luma Modify) --- wymaga spełnienia
 co~najmniej jednego z~warunków: $p_\text{AI} \geq \texttt{CINEMATIC\_RESCUE\_MIN\_CLIP\_PROB} = 0{,}20$
 lub obecności kompaktowej narożnej nakładki (\texttt{of\_corner\_compact\_roi\_count}~$\geq 1$).
+Formalnie jest to heurystyka ochronna typu \textit{false-positive guard},
+która ogranicza aktywację ścieżki kinematycznej bez~silnego potwierdzenia
+sygnałami specyficznymi dla~AI.
 Dzięki temu nagrania w~rodzaju \enquote{Ginza in Tokyo} czy teledyski
 z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
 
@@ -630,6 +648,34 @@ o~charakterze orientacyjnym; wyniki w~sekcji~\ref{sec:porownanie_zbiorcze}
     mogłyby dostarczyć znacznie więcej wglądu.
 
 \end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{Threats to Validity --- podsumowanie}
+\label{tab:threats_summary}
+\small
+\begin{tabular}{L{4.6cm}L{4.5cm}L{5.8cm}}
+\toprule
+\textbf{Zagrożenie} & \textbf{Wpływ} & \textbf{Sposób ograniczenia} \\
+\midrule
+Niezrównoważony zbiór i~wąski profil negatywów &
+Możliwe zawyżenie stabilności metryk poza broadcastem &
+Wykorzystanie FPR i~Recall jako metryk głównych; plan rozszerzenia danych \texttt{realclean} \\
+\addlinespace[2pt]
+Transfer gap między generatorami &
+Spadek skuteczności na~nowszych modelach &
+Modułowa fuzja sygnałów i~aktualizacja heurystyk bez~przebudowy potoku \\
+\addlinespace[2pt]
+Tuning heurystyk na~tym samym benchmarku &
+Ryzyko częściowego przeuczenia &
+Sweep parametrów, wybór punktu Pareto; docelowo osobny split walidacyjny \\
+\addlinespace[2pt]
+Porównania narzędzi na~różnych próbach &
+Brak pełnej porównywalności 1:1 &
+Wyraźne oddzielenie tabel porównania wspólnego ($N=79$) i~poglądowego \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 Pomimo tych ograniczeń wyniki wskazują na~praktyczną wartość podejścia wielosygnałowego
 i~stanowią solidną bazę dla przyszłych badań.
