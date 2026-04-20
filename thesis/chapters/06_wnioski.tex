@@ -3,17 +3,17 @@
 
 \section{Podsumowanie wynik\'{o}w}
 
-Celem niniejszej pracy by\l{}a analiza narz\k{e}dzi i~metod wykrywania tre\'{s}ci
-generowanych przez sztuczn\k{a} inteligencj\k{e} w~obszarze multimedi\'{o}w wideo,
-ze~szczeg\'{o}lnym uwzgl\k{e}dnieniem praktycznej skuteczno\'{s}ci dost\k{e}pnych detektor\'{o}w
-oraz zaproponowanie podej\'{s}cia wielosygna\l{}owego jako alternatywy dla~rozwi\k{a}za\'{n}
-komercyjnych.
+Celem niniejszej pracy by\l{}a analiza metod wykrywania tre\'{s}ci
+generowanych przez sztuczn\k{a} inteligencj\k{e} w~obszarze wideo
+oraz ocena, czy podej\'{s}cie wielosygna\l{}owe może stanowić
+konserwatywne narzędzie wspomagające analizę materiałów w~scenariuszach
+redakcyjnych i moderacyjnych.
 
-Przeprowadzona ewaluacja na~zbiorze 137~plik\'{o}w wideo potwierdzi\l{}a,
+Przeprowadzona ewaluacja na~zbiorze 137~plik\'{o}w wideo pokaza\l{}a,
 \.{z}e zaproponowany potok wielosygna\l{}owy --- \l{}\k{a}cz\k{a}cy analiz\k{e} OCR,
 median\k{e} temporaln\k{a}, przep\l{}yw optyczny, artefakty FFT
-oraz metadane C2PA --- osi\k{a}ga powtarzalne wyniki na~czterech r\'{o}\.{z}nych
-kategoriach testowych. Dla~film\'{o}w AI bez modyfikacji detektor osi\k{a}gn\k{a}\l{}
+oraz metadane C2PA --- daje spójne wyniki w~ramach badanego benchmarku
+na~czterech r\'{o}\.{z}nych kategoriach testowych. Dla~film\'{o}w AI bez modyfikacji detektor osi\k{a}gn\k{a}\l{}
 recall~$0{,}605$, dla~film\'{o}w po~kompresji recall wyniósł~$0{,}577$,
 natomiast po~przyci\k{e}ciu kadr\'{o}w spad\l{} do~$0{,}538$. Oznacza to, \.{z}e system
 zachowuje cz\k{e}\'{s}ciow\k{a} odporno\'{s}\'{c} na~proste operacje edycyjne, jednak
@@ -30,7 +30,8 @@ Należy jednak podkreślić, że niewielki rozmiar zbioru danych (N\,=\,137)
 implikuje szerokie przedziały ufności dla obliczonych metryk, nadając wynikom
 charakter wstępny i~wymagający potwierdzenia na~większych skalach.
 Mimo to uzyskane wyniki są wystarczające, by wskazać kierunki dalszego rozwoju
-i~zidentyfikować kluczowe słabe punkty obecnych detektorów.
+i~zidentyfikować kluczowe słabe punkty obecnych detektorów, zwłaszcza w~obszarze
+generalizacji na nowe style wizualne i~nowe klasy negatywów.
 
 Wska\'{z}nik fa\l{}szywych alarm\'{o}w wyni\'{o}s\l{}
 $\mathrm{FPR} = 0{,}095$ dla~materia\l{}\'{o}w broadcastowych zawieraj\k{a}cych
@@ -54,9 +55,13 @@ Proponowane podej\'{s}cie odchodzi od~tego modelu:
 zamiast wska\'{z}nika procentowego podejmuje jednoznaczn\k{a} decyzj\k{e}
 binarn\k{a} i~dostarcza artefakty diagnostyczne umo\.{z}liwiaj\k{a}ce
 weryfikacj\k{e} ka\.{z}dego wykrycia.
+Jednocześnie należy podkreślić, że porównanie z~narzędziami komercyjnymi
+miało charakter orientacyjny: część testów wykonano na~różnych podzbiorach,
+a~tabela porównawcza 1:1 odnosi się do wcześniejszej wersji implementacyjnej,
+nie zaś do finalnej konfiguracji opisanej w~rozdziale~5.
 
 Istotnym wk\l{}adem implementacyjnym jest mechanizm TC Conditional Boost,
-kt\'{o}ry podnosi recall film\'{o}w granicznych bez~podnoszenia FPR,
+który w~badanym benchmarku podnosi recall film\'{o}w granicznych bez~podnoszenia FPR,
 wykorzystuj\k{a}c jednoczesn\k{a} ocen\k{e} stylistyczn\k{a} AI
 oraz zabezpieczenie przed~charakterystyczn\k{a} sygnatur\k{a} nak\l{}adek newsowych.
 
@@ -76,28 +81,29 @@ Dalsze badania powinny obejmowa\'{c}:
 
 \begin{itemize}
   \item \textbf{Wi\k{e}ksze zbiory darmowe} --- takie jak FaceForensics++~\cite{Rossler2019FaceForensics},
-        DFDC (Deepfake Detection Challenge Dataset) czy WildDeepfake, licz\k{a}ce dziesi\k{a}tki
-        tysi\k{e}cy klip\'{o}w z~r\'{o}\.{z}nymi technikami syntezy;
-  \item \textbf{P\l{}atne bazy danych} --- komercyjne zbiory, np.\ oferowane przez Veritone
-        lub Nielsen, zawieraj\k{a}ce materia\l{}y z~kontrolowanymi metadanymi produkcji,
-        co~umo\.{z}liwia precyzyjn\k{a} weryfikacj\k{e} etykiet;
+        DFDC~\cite{Dolhansky2020DFDC} czy GenVideo~\cite{Sun2024GenVideo},
+        licz\k{a}ce dziesi\k{a}tki lub setki tysi\k{e}cy klip\'{o}w z~r\'{o}\.{z}nymi technikami syntezy;
+  \item \textbf{Licencjonowane bazy danych z~udokumentowaną proweniencją} ---
+        komercyjne lub instytucjonalne zbiory zawieraj\k{a}ce materia\l{}y
+        z~kontrolowanymi metadanymi produkcji, co~umo\.{z}liwia precyzyjn\k{a}
+        weryfikacj\k{e} etykiet;
   \item \textbf{Materia\l{}y z~platform spo\l{}eczno\'{s}ciowych} --- filmy pobrane z~TikToka,
         YouTube Shorts i~Instagrama, kt\'{o}re przesz\l{}y przez agresywn\k{a} rekompresj\k{e}
         transkodowania platformy, stanowi\k{a}c\k{a} jedno z~najtrudniejszych wyzwa\'{n}
         dla~detektor\'{o}w sygna\l{}owych;
   \item \textbf{Zr\'{o}\.{z}nicowanie modeli generatywnych} --- w\l{}\k{a}czenie materia\l{}\'{o}w
-        z~nowszych modeli (Sora~2, Runway Gen-5, Kling, Pika~2.0) w~miar\k{e}
-        ich dost\k{e}pno\'{s}ci, aby \'{s}ledzi\'{c} ewolucj\k{e} artefakt\'{o}w.
+        z~kolejnych generacji modeli text-to-video w~miar\k{e} ich dost\k{e}pno\'{s}ci,
+        aby \'{s}ledzi\'{c} ewolucj\k{e} artefakt\'{o}w.
 \end{itemize}
 
 \subsection{Ewaluacja p\l{}atnych narz\k{e}dzi komercyjnych}
 
 W~ramach pracy przetestowano wy\l{}\k{a}cznie narz\k{e}dzia dost\k{e}pne bezp\l{}atnie.
-Pe\l{}na analiza por\'{o}wnawcza powinna obj\k{a}\'{c} p\l{}atne rozwi\k{a}zania klasy enterprise,
-takie jak: SynthID Detector (Google DeepMind), Hive Moderation, Reality Defender
-oraz Intel FakeCatcher. Szczeg\'{o}lnie interesuj\k{a}ce by\l{}oby zbadanie,
-czy wy\.{z}szy koszt subskrypcji przek\l{}ada si\k{e} na~rzeczywist\k{a} popraw\k{e}
-czu\l{}o\'{s}ci w~stosunku do~proponowanego podej\'{s}cia wielosygna\l{}owego.
+Pe\l{}na analiza por\'{o}wnawcza powinna obj\k{a}\'{c} również p\l{}atne rozwiązania
+klasy enterprise i~narzędzia \textit{provenance-first}, oceniane jednak
+na~tym samym, wspólnym zbiorze testowym co własny detektor. Dopiero taki eksperyment
+pozwoli odpowiedzieć, czy wyższy koszt subskrypcji przekłada się na~rzeczywistą
+poprawę czułości lub obniżenie FPR.
 
 \subsection{Odporno\'{s}\'{c} na~ataki adwersarialne}
 

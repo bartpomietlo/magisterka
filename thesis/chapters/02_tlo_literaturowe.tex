@@ -1,8 +1,14 @@
 \chapter{T\l{}o literaturowe}
 \label{ch:tlo}
 
-Niniejszy rozdzia\l{} przedstawia systematyczny przegl\k{a}d literatury naukowej
+Niniejszy rozdzia\l{} przedstawia ukierunkowany przegl\k{a}d narracyjny literatury
 dotycz\k{a}cej generowania i~detekcji fa\l{}szywych tre\'{s}ci multimedialnych.
+Nie jest to formalny \textit{systematic review}; materia\l{} dobierano celowo
+pod~kątem problemów kluczowych dla niniejszej pracy: generalizacji między modelami,
+detekcji \textit{in the wild}, watermarkingu, proweniencji oraz benchmarków wideo.
+Priorytet nadano publikacjom recenzowanym i~uznanym benchmarkom, natomiast
+specyfikacje branżowe, raporty i~blogi producentów wykorzystano wyłącznie
+jako materiały kontekstowe.
 Om\'{o}wiono kolejno: modele generatywne leżące u~podstaw syntezy wideo,
 metody detekcji oparte na~analizie obrazu i~ruchu, techniki znakowania wodnego
 tworzące alternatywną ścieżkę weryfikacji, zbiory danych
@@ -242,6 +248,13 @@ nale\.{z}\k{a} do~mniejszo\'{s}ci w~literaturze \cite{Khan2025ComprehensiveSurve
     \.{z}e podej\'{s}cia oparte na~cechach fundamentalnych (FFT, optical flow,
     metadane) s\k{a} bardziej trwa\l{}e ni\.{z} podej\'{s}cia CNN trenowane
     end-to-end na~konkretnych modelach.
+
+  \item \textbf{(6) Kalibracja i~ocena przy~realnych rozk\l{}adach klas.}
+    Wysokie AUC raportowane na~benchmarkach kontrolowanych nie przekłada się
+    automatycznie na~użyteczność operacyjną, jeżeli detektor nie jest kalibrowany
+    pod~rzadkie występowanie treści AI i~asymetrię kosztów błędów.
+    Literatura coraz częściej podkreśla potrzebę raportowania metryk zależnych
+    od~punktu pracy oraz walidacji na~zewnętrznych zbiorach \cite{Wang2024ReliabilityPerspective,Sun2024GenVideo}.
 \end{itemize}
 
 Niniejsza praca koncentruje si\k{e} na~detekcji wideo generowanych przez AI,

@@ -32,9 +32,9 @@ agregację wyników z~wielu klatek i~zapis raportów do~plików~CSV.
 
 Do~rozpoznawania tekstu w~klatkach wideo (watermarki widoczne, napisy,
 \textit{lower thirds}) aplikacja korzysta z~silników~OCR.
-W~zależności od~konfiguracji środowiska uruchamiany jest silnik
-\textbf{EasyOCR} lub \textbf{PaddleOCR} --- oba działają lokalnie
-i~nie wymagają połączenia z~usługami zewnętrznymi.
+Warstwa OCR wspiera kilka backendów lokalnych, jednak w~referencyjnym
+benchmarku opisanym w~tej pracy wykorzystano \textbf{EasyOCR~1.7};
+RapidOCR i~PaddleOCR pozostają opcjonalnymi alternatywami środowiskowymi.
 W~warstwie analizy statystycznej sygnału wideo oraz przy~obliczaniu widma
 częstotliwościowego klatek (analiza FFT) wykorzystywana jest biblioteka
 \textbf{SciPy}.
@@ -44,19 +44,19 @@ Detekcja watermarków niewidzialnych i~sprawdzenie metadanych C2PA
 \texttt{c2pa\_detector} i~dodatkowe komponenty opierające się
 na~publicznych specyfikacjach standardu C2PA opracowanego przez
 \textit{Coalition for Content Provenance and Authenticity}.
-W~części badawczej uwzględniono również wpływ systemów
-\textbf{SynthID} (Google DeepMind) na~materiały generowane przez popularne
-generatory, co~pozwoliło zestawić własny detektor z~rozwiązaniami
-opartymi na~znakach osadzanych bezpośrednio w~procesie generacji.
+W~części badawczej uwzględniono również kontekst systemów provenance-first,
+takich jak \textbf{SynthID} (Google DeepMind), jako punkt odniesienia
+dla rozwiązań opartych na znakach osadzanych bezpośrednio w~procesie generacji.
+Nie stanowiło to jednak osobnego kanału ilościowej ewaluacji.
 
 \subsubsection*{Mapa kanałów watermarkingu i~proweniencji}
 W~implementacji rozróżniono trzy kanały weryfikacji:
 \begin{itemize}
   \item \textbf{Widoczny watermark} --- detekcja tekstu i~znaczników wizualnych
     przez OCR oraz analizę mediany temporalnej i~regionów o~niskim ruchu.
-  \item \textbf{Niewidoczny watermark} --- sygnał wnioskowany pośrednio na podstawie anomalii residuum i~artefaktów sygnałowych
+  \item \textbf{Proxy niewidocznego watermarkingu} --- sygnał wnioskowany pośrednio na podstawie anomalii residuum i~artefaktów sygnałowych
     (FFT, spójność temporalna) oraz wyników \texttt{c2pa\_detector}; system nie dekoduje ukrytego ładunku informacyjnego
-    ani nie gwarantuje identyfikacji konkretnego schematu znakowania.
+    ani nie gwarantuje identyfikacji konkretnego schematu znakowania, dlatego kanał ten należy interpretować jako heurystyczny sygnał pomocniczy.
   \item \textbf{Proweniencja} --- walidacja manifestu C2PA
     (\textit{Content Credentials}) i~metadanych pochodzenia pliku.
 \end{itemize}
@@ -111,6 +111,10 @@ tryb szczegółowej analizy dwufazowej.
   \label{fig:gui_desc}
 \end{figure}
 
+Rysunki~\ref{fig:gui_main} i~\ref{fig:gui_desc} dokumentują warstwę operacyjną
+systemu: kolejkę plików, logi, podgląd klatki oraz dostęp do~artefaktów
+diagnostycznych, które są wykorzystywane później przy analizie błędów.
+
 \subsection*{Tryb CLI -- automatyzacja i~ewaluacja wsadowa}
 \label{sec:cli}
 
@@ -121,7 +125,7 @@ Aplikacja wspiera dwa niezależne tryby uruchomienia:
 \begin{itemize}
   \item \textbf{Tryb GUI} -- \texttt{python main.py} -- uruchamia pełny interfejs
     graficzny PyQt6 z~tabelą wyników, konsolą logów i~podglądem klatki;
-  \item \textbf{Tryb CLI} -- \texttt{python dataset/evaluate.py} -- uruchamia
+  \item \textbf{Tryb CLI} -- \texttt{python kod/dataset/evaluate.py} -- uruchamia
     potok detekcji bezpośrednio z~wiersza poleceń, bez~żadnego interfejsu graficznego.
 \end{itemize}
 
@@ -140,7 +144,7 @@ oblicza recall i~FPR oraz wypisuje podsumowanie po~zakończeniu analizy.
 Przykładowe wywołanie:
 
 \begin{verbatim}
-python dataset/evaluate.py --input ./videos \
+python kod/dataset/evaluate.py --input ./videos \
   --output results.csv --mode standard
 \end{verbatim}
 
@@ -168,7 +172,7 @@ od~treści dynamicznych. Analiza przepływu optycznego pozwala z~kolei wykryć
 obszary o~zerowym lub prawie zerowym ruchu, które mogą wskazywać
 na~obecność nakładki statycznej.
 
-\subsection*{Analiza częstotliwościowa --- moduł FluxFFT}
+\subsection*{Analiza częstotliwościowa --- moduł FFT (\texttt{flux\_fft\_detector})}
 
 Moduł \texttt{flux\_fft\_detector} realizuje detekcję opartą na~widmie
 częstotliwościowym klatek wideo. Materiały generatywne charakteryzują się
@@ -189,10 +193,15 @@ przestrzenna związana z~szumem kompresji i~teksturą tła.
 \subsection*{Klasyfikator stylistyczny --- moduł AIStyleCLIP}
 
 Moduł \texttt{ai\_style\_clip\_detector} korzysta z~reprezentacji osadzonych
-przez model CLIP do~oceny, czy sekwencja klatek przypomina wizualnie
-materiały generatywne. Na~podstawie cech wyekstrahowanych z~kolejnych klatek
-używany jest uprzednio wytrenowany klasyfikator binarny (\texttt{clip\_classifier.pkl}),
-który przypisuje każdemu filmowi prawdopodobieństwo przynależności
+przez model \texttt{openai/clip-vit-base-patch32} do~oceny, czy sekwencja klatek
+przypomina wizualnie materiały generatywne. Na~podstawie 8~równomiernie
+próbkowanych klatek budowany jest wektor cech będący konkatenacją średniej
+i~odchylenia standardowego embeddingów CLIP (1024~wymiary), a~następnie
+używany jest uprzednio wytrenowany klasyfikator binarny
+(\texttt{clip\_classifier.pkl}). Model uczono na~zbiorze \texttt{ai\_baseline}
+vs.\ \texttt{adv\_fp\_trap} przy użyciu \textit{Logistic Regression}
+z~regularyzacją L2 ($C=1{,}0$) oraz 5-krotnej walidacji stratified cross-validation.
+Klasyfikator przypisuje każdemu filmowi prawdopodobieństwo przynależności
 do~klasy materiałów AI (\texttt{ai\_style\_prob}).
 
 Wartość ta pełni w~systemie podwójną rolę. Po~pierwsze, wysoki wynik
@@ -366,9 +375,10 @@ z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
   \label{fig:folder}
 \end{figure}
 
-Taki sposób dokumentowania wyników sprawia, że system nie działa
-jak \enquote{czarna skrzynka} --- użytkownik może przejrzeć każdy artefakt
-i~zweryfikować zasadność decyzji klasyfikacyjnej.
+Rysunki~\ref{fig:frames} i~\ref{fig:folder} pokazują, że system pozostawia
+ślad audytowy na poziomie klatek, cech i~raportów pomocniczych. Nie eliminuje to
+w~pełni problemu \enquote{czarnej skrzynki}, ale wyraźnie ułatwia weryfikację
+decyzji klasyfikacyjnej i~analizę błędów.
 
 % -------------------------------------------------------------------
 \section{Źródła i~inspiracje techniczne}
@@ -426,44 +436,62 @@ Kategoria & Opis & $N$ \\
 \end{tabular}
 \end{table}
 
+Split \texttt{ai\_baseline} zawiera 43~unikalne filmy źródłowe wygenerowane
+przez różne modele AI. Splity \texttt{adv\_compressed} oraz
+\texttt{adv\_cropped} nie reprezentują nowych treści semantycznych, lecz
+transformacyjne warianty 26~z~tych 43~filmów. Oznacza to, że 95~rekordów dodatnich
+nie odpowiada 95~unikalnym scenom, lecz 43~źródłowym scenom oraz 52~wariantom
+adwersarialnym. Klasa negatywna \texttt{adv\_fp\_trap} obejmuje 42~autentyczne
+materiały broadcastowe z~nakładkami graficznymi. Pełne manifesty plików
+utrzymywane są w~repozytorium projektu.
+
+Etykiety przypisano ręcznie na podstawie źródła pliku, deklarowanego generatora
+oraz inspekcji materiału. W~trybie \texttt{standard} skrypt \texttt{evaluate.py}
+próbkuje 30~klatek rozmieszczonych równomiernie w~całej długości filmu, dzięki
+czemu wyniki nie zależą od ręcznego wyboru pojedynczego fragmentu.
+
 \subsection*{Wyniki końcowe}
 
 Tabela~\ref{tab:eval_results} przedstawia wyniki końcowej wersji detektora
 po~wprowadzeniu poprawek \texttt{high\_score\_override\_guard}
-i~\texttt{cinematic\_rescue\_guard}.
-Kategoria \texttt{adv\_fp\_trap} jest zbiorem wyłącznie negatywnym,
-dlatego metryka F1 nie jest dla niej wyznaczana.
+i~\texttt{cinematic\_rescue\_guard}. Kategoria \texttt{adv\_fp\_trap}
+jest zbiorem wyłącznie negatywnym, dlatego recall nie jest dla niej wyznaczany.
+Wartość F1 raportowana jest wyłącznie globalnie, ponieważ poszczególne splity
+dodatnie nie mają własnych liczników FP.
 
 \begin{table}[h]
 \centering
 \caption{Metryki klasyfikacji końcowej wersji detektora}
 \label{tab:eval_results}
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{lrrrrr}
 \toprule
-Kategoria & $N$ & TP & FN & Recall & F1 & FPR \\
+Kategoria & $N$ & TP & FN & Recall & FPR \\
 \midrule
-\texttt{ai\_baseline}    & 43 & 26 & 17 & 0{,}605 & 0{,}754 & --- \\
-\texttt{adv\_compressed} & 26 & 15 & 11 & 0{,}577 & 0{,}732 & --- \\
-\texttt{adv\_cropped}    & 26 & 14 & 12 & 0{,}538 & 0{,}700 & --- \\
-\texttt{adv\_fp\_trap}   & 42 & --- & --- & ---     & ---     & 0{,}095 \\
+\texttt{ai\_baseline}    & 43  & 26 & 17 & 0{,}605 & --- \\
+\texttt{adv\_compressed} & 26  & 15 & 11 & 0{,}577 & --- \\
+\texttt{adv\_cropped}    & 26  & 14 & 12 & 0{,}538 & --- \\
+\texttt{adv\_fp\_trap}   & 42  & --- & --- & ---     & 0{,}095 \\
+\textbf{Globalnie}       & 137 & 55 & 40 & 0{,}579 & 0{,}095 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \noindent\textit{Nota: Dla kategorii \texttt{adv\_fp\_trap} (klasa negatywna)
-Recall i F1 nie są zdefiniowane — podano wyłącznie FPR.
-Wysoka wartość F1 względem recall dla kategorii \texttt{ai\_baseline}
-wynika z~precyzji około 0{,}93 — zbiór zawiera jedynie 4~fałszywe pozytywy
-na~59~pozytywnych predykcji.
-Warto podkreślić, że system jest klasyfikatorem binarnym z~jednym progiem decyzji,
-nie klasyfikatorem probabilistycznym --- nie ma pełnej krzywej ROC ani AUC.
-System osiąga FPR = 0,095 i Recall = 0,58–0,61 na zbiorze ewaluacyjnym.}
+recall nie jest zdefiniowany, dlatego podano wyłącznie FPR. Standardowe F1
+nie jest raportowane per split, ponieważ wymaga wspólnej przestrzeni TP/FP/FN;
+w~tej pracy sens ma tylko F1 globalne liczone na~pełnym zbiorze ewaluacyjnym.
+Dla wszystkich 137~próbek globalna precyzja wynosi 0{,}932, a~globalne
+F1 wynosi 0{,}714.}
 
 Detektor osiągnął recall~0{,}605 na~zbiorze bazowym
 i~0{,}577--0{,}538 na~zbiorach z~modyfikacją kompresji i~przycięcia.
 Wskaźnik fałszywych alarmów wyniósł $\mathrm{FPR} = 0{,}095$
 (4~FP na~42~próbkach negatywnych) dla~kategorii \texttt{adv\_fp\_trap},
 co~plasuje się wyraźnie poniżej wyznaczonego progu $1/7 \approx 0{,}143$.
+Próg ten nie pochodzi z~literatury jako uniwersalny standard, lecz został
+przyjęty pragmatycznie jako punkt pracy dla pilotażowego scenariusza newsroomowego:
+średnio nie więcej niż jeden fałszywy alarm na~siedem trudnych materiałów
+broadcastowych kierowanych do~ręcznej weryfikacji.
 W~porównaniu z~wcześniejszą wersją detektora ($\mathrm{FPR} = 0{,}190$, 8~FP)
 wprowadzone poprawki wyeliminowały połowę fałszywych alarmów
 bez~utraty żadnego prawdziwego pozytywu.
@@ -471,26 +499,36 @@ Precyzja globalna wynosi $55/(55+4) \approx 0{,}932$ na~zbiorze ewaluacyjnym,
 przy~czym należy zaznaczyć, że~zbiór ten~nie jest w~pełni zrównoważony
 --- 95~próbek pozytywnych wobec~42~negatywnych --- co~zawyża bezwzględną
 wartość precyzji i~sprawia, że~recall oraz FPR są bardziej miarodajnymi
-wskaźnikami jakości detektora w~tym~kontekście. Przy zachowaniu $\text{FPR} = 0{,}095$ żadna konfiguracja z frontu Pareto nie osiągała
-recall powyżej $0{,}605$ --- oznacza to, że dalsze zwiększenie czułości detekcji wymagałoby
-akceptacji wyższego wskaźnika fałszywych alarmów lub istotnego poszerzenia zbioru danych
-treningowych o nowe klasy materiałów syntetycznych.
+wskaźnikami jakości detektora w~tym~kontekście. Przybliżone 95\% przedziały
+ufności Wilsona dla pełnego zbioru wynoszą odpowiednio:
+recall~$\in [0{,}478;\,0{,}673]$ oraz FPR~$\in [0{,}038;\,0{,}221]$.
+Wyniki te należy więc interpretować jako pilotażowe oszacowania, a~nie
+stabilne parametry populacyjne. Przy zachowaniu $\text{FPR} = 0{,}095$
+żadna konfiguracja z badanego sweepu bazowej funkcji fuzji nie osiągała
+recall powyżej $0{,}605$ --- oznacza to, że dalsze zwiększenie czułości
+detekcji wymagałoby akceptacji wyższego wskaźnika fałszywych alarmów,
+rozbudowy danych lub zmiany samej architektury potoku.
 
 \subsection*{Analiza przestrzeni parametrów --- front Pareto}
 
 Dobór domyślnego progu detekcji nie był arbitralny. Przeprowadzono
-systematyczny sweep parametrów funkcji fuzji, generując kilkadziesiąt
+sweep parametrów bazowej funkcji fuzji, generując kilkadziesiąt
 konfiguracji różniących się wartością progu punktowego, wagami
 poszczególnych sygnałów i~aktywnością heurystyk zabezpieczających.
 Każda konfiguracja została oceniona parą metryk: TPR na~zbiorze
 \texttt{ai\_baseline} oraz FPR na~zbiorze \texttt{adv\_fp\_trap}.
-Przetestowano 54 konfiguracje parametrów fuzji, spośród których na front Pareto weszła jedna unikalna konfiguracja.
+Przetestowano 54 konfiguracje parametrów fuzji, spośród których na front Pareto
+weszła jedna unikalna konfiguracja w~obrębie tego konkretnego sweepu.
 
 Rysunek~\ref{fig:pareto} przedstawia front Pareto wyznaczony z~wyników
 tego sweepowania. Każdy szary punkt odpowiada jednej testowanej konfiguracji;
-niebieski punkt wyznacza front Pareto — jedyną niezdominowaną konfigurację
+niebieski punkt wyznacza jedyną konfigurację niezdominowaną
 spośród 54 badanych ustawień. Czerwona gwiazdka oznacza punkt operacyjny
 wybranej konfiguracji końcowej: $\mathrm{FPR} = 0{,}095$, $\mathrm{TPR} = 0{,}60$.
+Nie jest to ten sam punkt co~front Pareto z~rysunku: konfiguracja końcowa
+powstała po~późniejszych korektach heurystyk ochronnych, dlatego wykres należy
+traktować jako mapę przestrzeni parametrów bazowej funkcji fuzji, a~nie jako
+dowód, że finalny punkt pracy leży na tym froncie.
 Pomarańczowa linia przerywana wyznacza cel projektowy
 $\mathrm{FPR} \leq 1/7 \approx 0{,}143$; zielona strefa pożądana
 zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
@@ -498,16 +536,15 @@ zaznacza obszar, w~którym FPR i~TPR spełniają jednocześnie oba kryteria.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.88\textwidth]{figures/07_pareto_frontier.png}
-  \caption{Front Pareto trade-off FPR/TPR wyznaczony z~systematycznego
-    sweepowania parametrów fuzji. Szare punkty to~wszystkie testowane
-    konfiguracje; niebieski punkt wyznacza front Pareto.
+  \caption{Mapa przestrzeni parametrów bazowej funkcji fuzji w~układzie FPR/TPR.
+    Szare punkty to~wszystkie testowane konfiguracje sweepu; niebieski punkt
+    oznacza jedyną konfigurację niezdominowaną w~tym sweepie.
     Czerwona gwiazdka ($\mathrm{FPR}=0{,}095$, $\mathrm{TPR}=0{,}60$)
-    odpowiada konfiguracji końcowej.
+    odpowiada konfiguracji końcowej po~późniejszych poprawkach heurystycznych,
+    dlatego nie należy utożsamiać jej z~punktem frontu Pareto.
     Pomarańczowa linia przerywana wyznacza cel projektowy
-    $\mathrm{FPR} \leq 1/7 \approx 0{,}143$.
-    Punkt operacyjny leży wewnątrz strefy pożądanej i~na~froncie Pareto,
-    co~potwierdza, że~żadna z~pozostałych konfiguracji nie zapewnia
-    lepszego TPR przy~zachowaniu tego~samego FPR.}
+    $\mathrm{FPR} \leq 1/7 \approx 0{,}143$. Zielona strefa oznacza obszar
+    pożądany z~punktu widzenia przyjętego punktu pracy.}
   \label{fig:pareto}
 \end{figure}
 
@@ -515,8 +552,9 @@ Istotna obserwacja wynikająca z~wykresu: testowane konfiguracje skupiały się
 w wąskim przedziale $\mathrm{FPR} \in [0{,}05;\, 0{,}12]$, natomiast front
 Pareto zredukował się do jednej unikalnej konfiguracji. Oznacza to, że w badanym
 sweepie nie znaleziono alternatywnej konfiguracji, która poprawiałaby TPR
-bez pogorszenia FPR. Wybrana konfiguracja maksymalizuje TPR w tym przedziale
-i pozostała jednocześnie na~froncie Pareto.
+bez pogorszenia FPR w~obrębie bazowego sweepu. Konfiguracja końcowa została
+następnie dobrana osobno jako konserwatywny punkt operacyjny po~dodaniu
+mechanizmów ochronnych spoza samego sweepu.
 
 \subsection*{Analiza błędów}
 
@@ -556,7 +594,7 @@ na zbiorze ewaluacyjnym (N\,=\,137):
 Heurystyka & Aktywacje & w tym na TP & Główne zastosowanie \\
 \midrule
 OCR watermark & 38 & 36 & ai\_baseline z~widocznym znakiem \\
-FluxFFT & 31 & 31 & wideo Sora / Runway Gen-3 \\
+Moduł FFT (\texttt{flux\_fft\_detector}) & 31 & 31 & wideo Sora / Runway Gen-3 \\
 AIStyleCLIP & 24 & 22 & uzupełniający sygnał semantyczny \\
 TemporalConsistency & 47 & 43 & detekcja anomalii ruchu \\
 TC Conditional Boost & 12 & 11 & przypadki graniczne, wzmacnianie \\
@@ -568,7 +606,7 @@ C2PA & 14 & 14 & metadane proweniencji \\
 \end{tabular}
 \end{table}
 
-Warto zauważyć, że heurystyki \texttt{FluxFFT} i~\texttt{C2PA} aktywowały się wyłącznie
+Warto zauważyć, że moduł FFT i~\texttt{C2PA} aktywowały się wyłącznie
 na trafieniach prawdziwie dodatnich, co wskazuje na ich wysoką selektywność.
 Z kolei \texttt{broadcast\_score\_cap} oraz \texttt{of\_penalty} pełniły przede wszystkim rolę ochronną,
 ograniczając liczbę fałszywych alarmów na materiałach telewizyjnych.
@@ -643,8 +681,9 @@ do~ogólności uzyskanych wyników:
     Wiele heurystyk, takich jak TC Conditional Boost, Cinematic Path Guard
     i~broadcast guard, dostrajano bezpośrednio na~własnym zbiorze ewaluacyjnym.
     Stwarza to~ryzyko częściowego przeuczenia do~charakterystyki benchmarku,
-    ograniczone poprzez systematyczny sweep parametrów fuzji i~wybór konfiguracji
-    leżącej na~froncie Pareto (sekcja~\ref{sec:ewaluacja}).
+    ograniczone poprzez sweep parametrów bazowej funkcji fuzji i~wybór
+    konserwatywnego punktu pracy odniesionego do~analizy Pareto
+    (sekcja~\ref{sec:ewaluacja}).
     Ideałem byłby podział na~zbiór treningowy, walidacyjny i~testowy oraz
     wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
@@ -661,11 +700,11 @@ do~ogólności uzyskanych wyników:
     mają charakter orientacyjny, a~nie porównawczy.
 
   \item \textbf{Ograniczona interpretacja sygnałów}. 
-    Każdy z~modułów detekcji (Flux, CLIP, TC, C2PA) dostarcza wyłącznie wyniku liczbowego.
+    Każdy z~modułów detekcji (FFT, CLIP, TC, C2PA) dostarcza wyłącznie wyniku liczbowego.
     Brak pogłębionych analiz błędów II rodzaju (czy detektor zawsze popełnia te same błędy?)
     lub pewnych kategorii wizualnych (czy pewne profile wideo są systematycznie pominięte).
-    Ablacja modułów i~analiza aktywacji heurystyk (opisane w~niniejszej sekcji)
-    mogłyby dostarczyć znacznie więcej wglądu.
+    Dostępne artefakty diagnostyczne częściowo ograniczają ten problem, ale nie zastępują
+    pełnej interpretowalności modelowej.
 
 \end{enumerate}
 
@@ -690,26 +729,36 @@ Tuning heurystyk na~tym samym benchmarku &
 Ryzyko częściowego przeuczenia &
 Sweep parametrów, wybór punktu Pareto; docelowo osobny split walidacyjny \\
 \addlinespace[2pt]
+Brak szerokiej walidacji na~realnych danych &
+Niepewność co do zachowania poza materiałami broadcastowymi &
+Rozszerzenie negatywów o~zbiór \texttt{realclean} i~zewnętrzny test set \\
+\addlinespace[2pt]
 Porównania narzędzi na~różnych próbach &
 Brak pełnej porównywalności 1:1 &
 Wyraźne oddzielenie tabel porównania wspólnego ($N=79$) i~poglądowego \\
+\addlinespace[2pt]
+Ograniczona interpretacja sygnałów &
+Trudność w~wyjaśnieniu wszystkich FN/FP na poziomie przyczynowym &
+Zapis artefaktów diagnostycznych i~ręczna analiza błędów, lecz bez pełnej XAI \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Pomimo tych ograniczeń wyniki wskazują na~praktyczną wartość podejścia wielosygnałowego
-i~stanowią solidną bazę dla przyszłych badań.
+Pomimo tych ograniczeń wyniki wskazują na~potencjał praktyczny podejścia
+wielosygnałowego jako narzędzia wspomagającego triage, ale nie uzasadniają jeszcze
+tez o~szerokiej gotowości produkcyjnej.
 
-\subsection*{Analiza ablacyjna}
-W celu zbadania wkładu poszczególnych komponentów systemu przeprowadzono wielopoziomowy
-eksperyment ablacyjny, wyłączając kolejno moduły: bonus FFT, moduł CLIP (\texttt{ai\_style\_prob})
-oraz analizę optical flow wraz z~redukcją próbkowania.
-Tabela~\ref{tab:ablation} zestawia szacunkowe wyniki dla zbioru \texttt{ai\_baseline}
-i~\texttt{adv\_fp\_trap}; konfiguracje pośrednie interpolowano z~analizy aktywacji
-heurystyk (tabela~\ref{tab:heuristics}).
+\subsection*{Eksploracyjna ocena wkładu komponentów}
+W tej wersji pracy nie przeprowadzono pełnej, odrębnej kampanii ablacyjnej
+z~ponownym uruchomieniem benchmarku dla każdej konfiguracji. Zamiast tego
+przedstawiono \textbf{eksploracyjną estymację} wkładu wybranych komponentów,
+opartą na logach aktywacji heurystyk, pomiarach czasu i~kontrolnych wyłączeniach
+najważniejszych modułów. Tabeli~\ref{tab:ablation} nie należy zatem interpretować
+jako pełnoprawnej analizy ablacyjnej w~sensie eksperymentalnym, lecz jako
+pomocniczy opis względnego znaczenia poszczególnych warstw potoku.
 \begin{table}[h]
 \centering
-\caption{Analiza ablacyjna -- wpływ wyłączenia modułów na skuteczność i FPR}
+\caption{Eksploracyjna estymacja wpływu wyłączenia modułów na recall i FPR}
 \label{tab:ablation}
 \begin{tabular}{lccc}
 \hline
@@ -722,13 +771,14 @@ Bez OF, zredukowane próbkowanie & 0{,}326 & 0{,}381 & $\approx$0{,}8\,s \\
 \hline
 \end{tabular}
 \end{table}
-Wyniki wskazują na~istotną hierarchię sygnałów: wyłączenie FFT i~CLIP obniża recall
+Estymacja wskazuje na~istotną hierarchię sygnałów: wyłączenie FFT i~CLIP obniża recall
 o~2--4~pp przy~niezmiennym FPR, natomiast wyłączenie optical flow powoduje
 ponad czterokrotny wzrost fałszywych alarmów. Guardy heurystyczne oparte na~warunkach
 \texttt{of\_count~$\leq$~8} i~\texttt{sora\_static\_override} trywialnie aktywowały
 się przy~wyłączonym detektorze przepływu, co~potwierdza, że ich projektowanie zakłada
 obecność sygnału OF jako kotwicy decyzyjnej.
-Analiza ablacyjna uzasadnia zatem zachowanie pełnego potoku jako jedynego trybu produkcyjnego.
+Opis ten uzasadnia pozostawienie pełnego potoku jako konfiguracji domyślnej,
+ale nie zastępuje przyszłej, w~pełni zmierzonej kampanii ablacyjnej.
 
 % -------------------------------------------------------------------
 \section{Reprodukowalność eksperymentu}
@@ -739,17 +789,18 @@ Kluczowe biblioteki:
 \begin{itemize}
   \item \textbf{OpenCV}~4.9 (przetwarzanie wideo i~analizy FFT)
   \item \textbf{PyQt6}~6.7 (interfejs użytkownika)
-  \item \textbf{EasyOCR}~1.7 oraz \textbf{PaddleOCR}~2.7 (detekcja tekstu i~watermarków)
+  \item \textbf{EasyOCR}~1.7 (backend OCR użyty w~benchmarku referencyjnym; RapidOCR/PaddleOCR pozostają opcjonalnymi backendami)
   \item \textbf{NumPy}~1.26 oraz \textbf{SciPy}~1.13 (operacje numeryczne i~Signal Processing)
   \item \textbf{Pandas}~2.2 (zarządzanie danymi i~raporty)
-  \item \textbf{CLIP} (openai/CLIP, wersja główna z~2024; detekcja stylu AI)
+  \item \textbf{CLIP}~\texttt{openai/clip-vit-base-patch32} (detekcja stylu AI)
   \item \textbf{scikit-learn}~1.5 (metryki i~ewaluacja)
 \end{itemize}
 
 Kod źródłowy systemu dostępny jest w~repozytorium projektu pod adresem
 \url{https://github.com/bartpomietlo/magisterka}.
-W razie potrzeby możliwe jest również wskazanie konkretnego commita
-odpowiadającego wersji użytej do benchmarku.
+Wersji benchmarkowej odpowiada commit \texttt{196bfa7}
+(pełny skrót: \texttt{196bfa74ea54000d5da382187379572ef5bee686}),
+na~którym zamrożono wyniki przywoływane w~niniejszym rozdziale.
 Benchmark uruchamia się komendą:
 \begin{verbatim}
 python kod/dataset/evaluate.py --mode standard \
@@ -774,11 +825,19 @@ kategorie \texttt{ai\_baseline}, \texttt{adv\_compressed} i~\texttt{adv\_cropped
 (95~próbek pozytywnych łącznie). Dla samej kategorii \texttt{ai\_baseline}
 Recall wynosi 0{,}605 (tabela~\ref{tab:eval_results}).}
 
+Model \texttt{clip\_classifier.pkl} przygotowano skryptem
+\texttt{kod/tools/train\_clip\_classifier.py} na podstawie 8~równomiernie
+próbkowanych klatek z~filmów \texttt{ai\_baseline} i~\texttt{adv\_fp\_trap},
+stosując 5-krotną walidację stratified cross-validation oraz klasyfikator
+\textit{Logistic Regression} z~regularyzacją L2 ($C=1{,}0$). Pełne manifesty
+zbioru znajdują się w~plikach \texttt{dataset/manifest\_fake\_all.csv}
+oraz \texttt{dataset/manifest\_real\_all.csv}.
+
 Parametry fuzji zdefiniowane są w~pliku \texttt{fusion\_params.py};
 wartości progu decyzji i~wagi heurystyk dobrano na~podstawie sweepu parametrów
 oraz analizy frontu Pareto.
-Szczegółowe numery commitów oraz wersje użytych modeli (np.\ Flux, CLIP)
-dokumentowane są w~pliku \texttt{requirements.txt} i~logach benchmarku.
+Wersje bibliotek dokumentowane są w~pliku \texttt{requirements.txt},
+a~snapshoty wyników i~logi benchmarku zapisano w~repozytorium wynikowym projektu.
 
 % -------------------------------------------------------------------
 \section{Wnioski implementacyjne}
@@ -787,7 +846,7 @@ Przeprowadzona implementacja potwierdziła, że skuteczny detektor materiałów 
 nie powinien opierać się na~jednym sygnale. Znacznie lepsze rezultaty
 daje połączenie kilku niezależnych źródeł informacji:
 OCR, analizy ruchu, artefaktów częstotliwościowych,
-watermarkingu niewidzialnego i~metadanych proweniencji.
+proxy sygnałów związanych z~niewidocznym watermarkingiem i~metadanych proweniencji.
 Doświadczenia z~budowy aplikacji pokazują jednocześnie,
 że równie ważna jak warstwa algorytmiczna jest jakość
 interfejsu, czytelność raportowania i~dostępność

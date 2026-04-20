@@ -1,8 +1,8 @@
 \chapter{Wprowadzenie}
 
-Dynamiczny rozwój technologii generatywnej sztucznej inteligencji doprowadził do sytuacji, w której tworzenie fałszywych treści multimedialnych stało się dostępne dla szerokiego grona użytkowników bez specjalistycznej wiedzy technicznej.
+Dynamiczny rozwój technologii generatywnej sztucznej inteligencji doprowadził do sytuacji, w której tworzenie fałszywych treści multimedialnych stało się dostępne dla szerokiego grona użytkowników bez specjalistycznej wiedzy technicznej~\cite{Khan2025ComprehensiveSurvey,Li2025AIGCSurvey}.
 Narzędzia takie jak generatory wideo oparte na modelach dyfuzyjnych, systemy klonowania głosu czy generatory obrazów umożliwiają produkcję materiałów audiowizualnych o wysokim stopniu realizmu, trudnych do odróżnienia od autentycznych nagrań.
-Zjawisko to stanowi poważne zagrożenie dla bezpieczeństwa informacyjnego, integralności debaty publicznej oraz zaufania do mediów.
+Zjawisko to stanowi poważne zagrożenie dla bezpieczeństwa informacyjnego, integralności debaty publicznej oraz zaufania do mediów~\cite{Europol2023Deepfakes}.
 
 Dezinformacja multimedialna -- rozumiana jako celowe rozpowszechnianie fałszywych lub zmanipulowanych treści wizualnych i dźwiękowych -- nie jest zjawiskiem nowym.
 Jednak postęp w dziedzinie uczenia głębokiego, w szczególności modeli GAN (ang.~\textit{Generative Adversarial Network}) oraz dyfuzji latentnej, znacząco obniżył próg wejścia dla twórców fałszywych materiałów i jednocześnie podniósł ich jakość do poziomu, który utrudnia wykrycie przy użyciu tradycyjnych metod analizy.
@@ -10,19 +10,31 @@ Zjawisko powszechnie znane jako \textit{deepfake} ewoluowało od prostych podmia
 
 W odpowiedzi na te zagrożenia środowisko naukowe i przemysłowe intensywnie pracuje nad narzędziami detekcji fałszywych treści multimedialnych.
 Metody te obejmują zarówno klasyczne techniki analizy sygnału -- takie jak transformata Fouriera czy analiza przepływu optycznego -- jak i nowoczesne podejścia oparte na sieciach neuronowych, w tym konwolucyjnych sieciach CNN (ang.~\textit{Convolutional Neural Network}) i transformerach wizyjnych ViT (ang.~\textit{Vision Transformer}).
-Różnorodność stosowanych podejść, brak jednolitych standardów ewaluacji oraz szybkie tempo ewolucji technik generatywnych sprawiają, że ocena skuteczności dostępnych narzędzi pozostaje otwartym i istotnym problemem badawczym.
+Różnorodność stosowanych podejść, brak jednolitych standardów ewaluacji oraz szybkie tempo ewolucji technik generatywnych sprawiają, że ocena skuteczności dostępnych narzędzi pozostaje otwartym i istotnym problemem badawczym~\cite{Wang2024ReliabilityPerspective}.
 
 \section*{Cel i zakres pracy}
 
-Celem niniejszej pracy magisterskiej jest kompleksowa analiza narzędzi stosowanych do przeciwdziałania dezinformacji w obszarze multimediów ze szczególnym uwzględnieniem detekcji treści generowanych przez sztuczną inteligencję.
-Praca obejmuje zarówno przegląd literatury naukowej i raportów branżowych, jak i praktyczną implementację oraz ewaluację wybranych metod detekcji na zbiorach testowych zawierających materiały wideo wygenerowane przez modele AI.
+Celem niniejszej pracy magisterskiej jest ocena, czy wielosygnałowe podejście do detekcji wideo generowanego przez AI może pełnić rolę konserwatywnego narzędzia wspomagającego weryfikację treści w scenariuszach newsroomowych i moderacyjnych.
+Praca obejmuje ukierunkowany przegląd literatury naukowej i materiałów kontekstowych, praktyczną implementację detektora oraz jego ewaluację na pilotażowym benchmarku zawierającym materiały wideo wygenerowane przez modele AI, ich warianty po kompresji i przycięciu oraz negatywy broadcastowe.
+Zakres został świadomie zawężony do materiałów \textbf{wideo}; praca nie obejmuje obrazów statycznych, audio ani klasycznych face-swap deepfake'ów w nagraniach rzeczywistych.
 
 W ramach pracy zrealizowano następujące cele szczegółowe:
 \begin{enumerate}
     \item Analiza zagrożeń związanych z manipulacją treściami multimedialnymi -- taksonomia technik, skala zjawiska oraz konsekwencje społeczne.
-    \item Przegląd i kategoryzacja dostępnych narzędzi detekcji fałszywych treści -- rozwiązania komercyjne, open-source oraz metody akademickie.
-    \item Implementacja i ewaluacja systemu detekcji wideo generowanego przez AI, opartego na analizie artefaktów wizualnych, przepływu optycznego oraz widma częstotliwościowego.
-    \item Ocena skuteczności systemu przy użyciu standardowych metryk klasyfikacji binarnej: recall, FPR oraz analizy kompromisów na froncie Pareto.
+    \item Krytyczny przegląd dostępnych metod i narzędzi detekcji wideo AI -- rozwiązań komercyjnych, open-source oraz podejść akademickich.
+    \item Implementacja i ewaluacja systemu detekcji wideo generowanego przez AI, opartego na fuzji artefaktów wizualnych, przepływu optycznego, cech częstotliwościowych, sygnałów stylometrycznych oraz metadanych proweniencji.
+    \item Ocena kompromisu między recall a FPR na benchmarku pilotażowym, ze szczególnym naciskiem na ograniczenie fałszywych alarmów w materiałach broadcastowych.
+\end{enumerate}
+
+\section*{Hipoteza badawcza i pytania badawcze}
+
+Hipoteza badawcza pracy brzmi następująco: \textit{wielosygnałowy detektor wideo generowanego przez AI, łączący sygnały obrazowe, temporalne i proweniencyjne, może na pilotażowym benchmarku osiągnąć wskaźnik fałszywych alarmów nie wyższy niż $1/7 \approx 0{,}143$ dla klasy negatywnej broadcast przy jednoczesnym recall co najmniej 0,55 dla bazowego splitu \texttt{ai\_baseline}.}
+
+Weryfikacji tej hipotezy służą trzy pytania badawcze:
+\begin{enumerate}
+    \item Jakie ograniczenia mają publicznie dostępne narzędzia detekcji wideo AI w warunkach zbliżonych do rzeczywistej pracy redakcyjnej?
+    \item Czy ręcznie projektowana fuzja wielu sygnałów pozwala obniżyć FPR bez całkowitej utraty recall na materiałach AI?
+    \item Które transformacje post-processingu (kompresja, przycięcie) najsilniej degradują skuteczność detektora i które moduły są na nie najbardziej wrażliwe?
 \end{enumerate}
 
 \noindent\textbf{Wkład własny autora.}
@@ -43,4 +55,4 @@ Rozdział~4 prezentuje przegląd narzędzi i metod detekcji, zarówno komercyjny
 Rozdział~5 opisuje implementację i ewaluację opracowanego systemu detekcji wraz z analizą uzyskanych wyników.
 Rozdział~6 zawiera wnioski końcowe oraz kierunki dalszych badań.
 
-Uzyskane wyniki oraz zaproponowany benchmark mogą stanowić podstawę dalszego rozwinięcia pracy w kierunku publikacji naukowej dotyczącej heurystyczno-semantycznej detekcji materiałów wideo generowanych przez AI.
+Uzyskane wyniki oraz zaproponowany benchmark stanowią punkt wyjścia do dalszych prac badawczych i inżynierskich nad detekcją materiałów wideo generowanych przez AI.

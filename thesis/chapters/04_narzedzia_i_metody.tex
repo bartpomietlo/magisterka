@@ -10,7 +10,7 @@
 \label{sec:zbior_danych}
 
 Do ewaluacji narz\k{e}dzi detekcji tre\'{s}ci generowanych przez sztuczn\k{a}
-inteligencj\k{e} przygotowano zbi\'{o}r 51~film\'{o}w wideo, obejmuj\k{a}cy
+inteligencj\k{e} przygotowano pilota\.{z}owy zbi\'{o}r 51~film\'{o}w wideo, obejmuj\k{a}cy
 materia\l{}y syntetyczne wygenerowane przez r\'{o}\.{z}ne modele generatywne,
 materia\l{}y zmanipulowane (deepfake), autentyczne nagrania kamerowe
 oraz materia\l{}y kontrolne.
@@ -57,14 +57,16 @@ okaza\l{}o si\k{e} nagraniami (screen capture) interfejs\'{o}w
 lub recenzjami aplikacji --- nie s\k{a} to filmy wygenerowane przez AI
 w~\'{s}cis\l{}ym sensie. Zosta\l{}y one wykluczone z~g\l{}\'{o}wnej ewaluacji
 metryk klasyfikacji, lecz pozostaj\k{a} w~zbiorze jako przyk\l{}ady
-trudnych przypadk\'{o}w.
+trudnych przypadk\'{o}w. Weryfikacj\k{e} etykiet przeprowadzono ręcznie
+na podstawie źródła pliku, opisu materiału i inspekcji wizualnej.
 
 % ===================================================================
 \section{Przegl\k{a}d istniej\k{a}cych narz\k{e}dzi internetowych}
 \label{sec:przeglad_narzedzi}
 
 Na rynku dost\k{e}pnych jest kilka publicznie dost\k{e}pnych serwis\'{o}w internetowych
-om\'{o}wionych w~niniejszej sekcji:
+om\'{o}wionych w~niniejszej sekcji. Badanie obejmuje wyłącznie publiczne lub darmowe
+warianty narzędzi, a więc nie ma charakteru pełnego przeglądu rynku enterprise:
 DetectVideo.ai (sekcja~\ref{sec:detectvideo}),
 Undetectable.ai (sekcja~\ref{sec:undetectable})
 oraz AIVideoDetector.com (sekcja~\ref{sec:aivideodetector}).
@@ -113,9 +115,10 @@ Porównanie metryk w tabeli~4.4 ($N=79$) odnosi się do innego, wspólnego zbior
 badawczego użytego w analizie porównawczej dwóch systemów.
 Wy\.{z}szy wynik (72\%) uzyska\l{}y jedynie filmy z~wyra\'{z}nymi
 cechami generatywnymi (abstrakcja, fantasy) oraz zmanipulowany
-dokument, co~uzasadnia hipotezę roboczą, że narzędzie
-opiera się głównie na~analizie metadanych,
-a~nie pe\l{}nej analizie wizualnej.
+dokument. Wzorzec ten sugeruje, że narzędzie może opierać się
+na ograniczonym zestawie sygnałów (potencjalnie obejmującym metadane
+lub proste cechy wizualne), jednak bez dostępu do modelu pozostaje to
+wyłącznie ostrożną interpretacją typu black-box.
 
 % \begin{figure}[htbp]
 %   \centering
@@ -254,7 +257,9 @@ FPR       & \textbf{16{,}2\%} & 17{,}1\% \\
 \end{table}
 
 \noindent\textit{Uwaga: tabela dotyczy wersji porównawczej systemu na~wspólnym zbiorze
-$N=79$; metryki końcowej wersji systemu podano w~tabeli~\ref{tab:eval_results}.}
+$N=79$; metryki końcowej wersji systemu podano w~tabeli~\ref{tab:eval_results}.
+Nie należy interpretować tej tabeli jako porównania finalnej wersji detektora
+z~AIVideoDetector.com.}
 
 Wyniki obu system\'{o}w s\k{a} praktycznie identyczne ---
 F1 wynosi dok\l{}adnie 78{,}4\% dla obu narz\k{e}dzi.
