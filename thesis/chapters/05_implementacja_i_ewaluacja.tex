@@ -39,7 +39,7 @@ W~warstwie analizy statystycznej sygnału wideo oraz przy~obliczaniu widma
 częstotliwościowego klatek (analiza FFT) wykorzystywana jest biblioteka
 \textbf{SciPy}.
 
-Detekcja watermarków niewidzialnych i~sprawdzenie metadanych C2PA
+Analiza proxy sygnałów związanych z~niewidocznym watermarkingiem oraz sprawdzenie metadanych C2PA
 (\textit{Content Credentials}) realizowane są przez dedykowane moduły
 \texttt{c2pa\_detector} i~dodatkowe komponenty opierające się
 na~publicznych specyfikacjach standardu C2PA opracowanego przez
@@ -79,7 +79,7 @@ w~eksploratorze plików katalog wynikowy przypisany do~danego materiału wideo.
 Obsługiwane formaty wideo to: \texttt{mp4}, \texttt{mov}, \texttt{avi},
 \texttt{mkv} i~\texttt{webm}. Aplikacja jest ukierunkowana wyłącznie
 na~analizę \textbf{materiałów filmowych}, nie obrazów statycznych,
-co~odpowiada celowi pracy --- detekcji watermarków i~śladów
+co~odpowiada celowi pracy --- detekcji śladów
 generatywnego pochodzenia w~plikach wideo, gdzie istotna jest zarówno
 zawartość pojedynczej klatki, jak i~informacja temporalna między klatkami.
 
@@ -89,7 +89,7 @@ Użytkownik konfiguruje czułość OCR (parametr \textit{confidence}),
 gęstość próbkowania klatek (\textit{sample rate}) oraz opcjonalny
 tryb szczegółowej analizy dwufazowej.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.92\textwidth]{../photos/gui.png}
   \caption{Główne okno aplikacji (PyQt6) podczas wsadowej analizy plików wideo.
@@ -100,7 +100,7 @@ tryb szczegółowej analizy dwufazowej.
   \label{fig:gui_main}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.92\textwidth]{../photos/gui_description.png}
   \caption{Interfejs aplikacji z~opisanymi elementami: (1)~tabela wyników
@@ -354,7 +354,7 @@ sygnałami specyficznymi dla~AI.
 Dzięki temu nagrania w~rodzaju \enquote{Ginza in Tokyo} czy teledyski
 z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.95\textwidth]{../photos/analized_frames.png}
   \caption{Widok raportu wynikowego wygenerowanego przez aplikację dla jednego pliku wideo.
@@ -363,7 +363,7 @@ z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
   \label{fig:frames}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
   \centering
   \includegraphics[width=0.85\textwidth]{../photos/analized_frames_folder.png}
   \caption{Struktura katalogu wynikowego wygenerowanego przez aplikację
@@ -379,25 +379,6 @@ Rysunki~\ref{fig:frames} i~\ref{fig:folder} pokazują, że system pozostawia
 ślad audytowy na poziomie klatek, cech i~raportów pomocniczych. Nie eliminuje to
 w~pełni problemu \enquote{czarnej skrzynki}, ale wyraźnie ułatwia weryfikację
 decyzji klasyfikacyjnej i~analizę błędów.
-
-% -------------------------------------------------------------------
-\section{Źródła i~inspiracje techniczne}
-
-Rozwój systemu był wspierany przez dokumentacje techniczne bibliotek
-\textbf{OpenCV}, \textbf{PyQt6}, \textbf{EasyOCR} i~\textbf{PaddleOCR},
-a~w~warstwie koncepcyjnej przez publiczne materiały dotyczące standardu
-\textbf{C2PA} (\url{https://c2pa.org}), dokumentację systemu
-\textbf{SynthID} (Google DeepMind) oraz publikacje omówione
-w~rozdziałach~2--3 tego opracowania.
-
-Doskonalenie detekcji miało charakter iteracyjny. Wyniki własnego detektora
-były porównywane z~zachowaniem publicznych generatorów wideo
-(Runway, Sora, Luma Dream Machine) i~komercyjnych detektorów,
-a~skuteczność poszczególnych heurystyk weryfikowano po~typowych
-operacjach na~plikach: kompresji, skalowaniu, rekodowaniu i~konwersji formatu.
-Dzięki temu projekt ewoluował w~kierunku wielosygnałowego detektora,
-który łączy analizę OCR, przepływu optycznego,
-artefaktów FFT i~metadanych pochodzenia.
 
 % -------------------------------------------------------------------
 \section{Ewaluacja ilościowa}
@@ -687,6 +668,16 @@ do~ogólności uzyskanych wyników:
     Ideałem byłby podział na~zbiór treningowy, walidacyjny i~testowy oraz
     wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
+  \item \textbf{Częściowo wewnętrzny charakter ewaluacji modułu AIStyleCLIP.}
+    Moduł AIStyleCLIP przygotowano na~podstawie materiałów z~kategorii
+    \texttt{ai\_baseline} i~\texttt{adv\_fp\_trap}, czyli z~tej samej rodziny kategorii,
+    która została następnie wykorzystana w~ewaluacji końcowej całego potoku.
+    Oznacza to, że benchmark nie jest w~pełni niezależny względem wszystkich
+    komponentów systemu i~dla tego modułu ma częściowo charakter walidacji wewnętrznej.
+    W~repozytorium nie utrzymywano odrębnego, rozłącznego zbioru treningowego
+    przeznaczonego wyłącznie dla tego klasyfikatora, dlatego pełna ocena jego
+    generalizacji wymagałaby osobnej kampanii na~zewnętrznym zestawie danych.
+
   \item \textbf{Brak szerokiej walidacji na~realnych danych.}
     Materiały \texttt{realclean} (tj.\ autentyczne nagrania pobrane z~Internetu, niepochodzące z~broadcastu i~nieposiadające graficznych nakładek)
     nie były w~pełni wykorzystane w~ewaluacji ilościowej, tylko w~analizie jakościowej.
@@ -729,6 +720,10 @@ Tuning heurystyk na~tym samym benchmarku &
 Ryzyko częściowego przeuczenia &
 Sweep parametrów, wybór punktu Pareto; docelowo osobny split walidacyjny \\
 \addlinespace[2pt]
+Częściowo wewnętrzny charakter AIStyleCLIP &
+Ryzyko zawyżenia oceny tego komponentu względem danych końcowych &
+Docelowo rozłączny train/validation/test lub zewnętrzny zbiór dla modułu CLIP \\
+\addlinespace[2pt]
 Brak szerokiej walidacji na~realnych danych &
 Niepewność co do zachowania poza materiałami broadcastowymi &
 Rozszerzenie negatywów o~zbiór \texttt{realclean} i~zewnętrzny test set \\
@@ -738,15 +733,16 @@ Brak pełnej porównywalności 1:1 &
 Wyraźne oddzielenie tabel porównania wspólnego ($N=79$) i~poglądowego \\
 \addlinespace[2pt]
 Ograniczona interpretacja sygnałów &
-Trudność w~wyjaśnieniu wszystkich FN/FP na poziomie przyczynowym &
-Zapis artefaktów diagnostycznych i~ręczna analiza błędów, lecz bez pełnej XAI \\
+Trudność w~wyjaśnieniu wszystkich FN/FP na poziomie przesłanek decyzji &
+Zapis artefaktów diagnostycznych i~ręczna analiza błędów, lecz bez pełnej interpretowalności modelowej \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Pomimo tych ograniczeń wyniki wskazują na~potencjał praktyczny podejścia
-wielosygnałowego jako narzędzia wspomagającego triage, ale nie uzasadniają jeszcze
-tez o~szerokiej gotowości produkcyjnej.
+Pomimo tych ograniczeń wyniki wspierają ostrożny wniosek, że podejście
+wielosygnałowe może pełnić rolę narzędzia wspomagającego triage,
+ale nie uzasadniają jeszcze tez o~szerokiej gotowości produkcyjnej
+ani pełnej walidacji zewnętrznej wszystkich komponentów.
 
 \subsection*{Eksploracyjna ocena wkładu komponentów}
 W tej wersji pracy nie przeprowadzono pełnej, odrębnej kampanii ablacyjnej
@@ -798,6 +794,10 @@ Kluczowe biblioteki:
 
 Kod źródłowy systemu dostępny jest w~repozytorium projektu pod adresem
 \url{https://github.com/bartpomietlo/magisterka}.
+Implementacja opierała się na~dokumentacjach technicznych bibliotek
+\textbf{OpenCV}, \textbf{PyQt6}, \textbf{EasyOCR} i~specyfikacji
+\textbf{C2PA}, natomiast warstwę koncepcyjną wspierały publikacje
+omówione w~rozdziałach~2--3.
 Wersji benchmarkowej odpowiada commit \texttt{196bfa7}
 (pełny skrót: \texttt{196bfa74ea54000d5da382187379572ef5bee686}),
 na~którym zamrożono wyniki przywoływane w~niniejszym rozdziale.
@@ -832,6 +832,9 @@ stosując 5-krotną walidację stratified cross-validation oraz klasyfikator
 \textit{Logistic Regression} z~regularyzacją L2 ($C=1{,}0$). Pełne manifesty
 zbioru znajdują się w~plikach \texttt{dataset/manifest\_fake\_all.csv}
 oraz \texttt{dataset/manifest\_real\_all.csv}.
+Wynika z~tego, że benchmark końcowy nie jest w~pełni niezależny względem
+tego komponentu; ograniczenie to~omówiono explicite w~sekcji
+\ref{sec:threats_to_validity}.
 
 Parametry fuzji zdefiniowane są w~pliku \texttt{fusion\_params.py};
 wartości progu decyzji i~wagi heurystyk dobrano na~podstawie sweepu parametrów

@@ -60,10 +60,16 @@ miało charakter orientacyjny: część testów wykonano na~różnych podzbiorac
 a~tabela porównawcza 1:1 odnosi się do wcześniejszej wersji implementacyjnej,
 nie zaś do finalnej konfiguracji opisanej w~rozdziale~5.
 
-Istotnym wk\l{}adem implementacyjnym jest mechanizm TC Conditional Boost,
-który w~badanym benchmarku podnosi recall film\'{o}w granicznych bez~podnoszenia FPR,
-wykorzystuj\k{a}c jednoczesn\k{a} ocen\k{e} stylistyczn\k{a} AI
-oraz zabezpieczenie przed~charakterystyczn\k{a} sygnatur\k{a} nak\l{}adek newsowych.
+Należy również zaznaczyć, że benchmark nie jest w~pełni niezależny względem
+wszystkich komponentów potoku, ponieważ moduł AIStyleCLIP był przygotowywany
+na~podstawie materiałów z~kategorii wykorzystanych następnie w~ewaluacji końcowej.
+Wyniki należy więc interpretować jako pilotażową walidację wewnętrzną całego systemu,
+a~nie jako w~pełni zewnętrzny test generalizacji wszystkich modułów.
+
+Istotnym wk\l{}adem implementacyjnym pozostaje mechanizm TC Conditional Boost,
+który w~badanym benchmarku był powiązany z~poprawą recall film\'{o}w granicznych
+przy niezmienionym FPR, lecz obserwacja ta nadal wymaga pełnej kampanii ablacyjnej
+na~rozłącznych danych.
 
 \section{Kierunki dalszych bada\'{n}}
 
