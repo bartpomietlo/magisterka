@@ -64,7 +64,9 @@ Należy również zaznaczyć, że benchmark nie jest w~pełni niezależny wzglę
 wszystkich komponentów potoku, ponieważ moduł \texttt{AIStyleCLIP} był przygotowywany
 na~podstawie materiałów z~kategorii wykorzystanych następnie w~ewaluacji końcowej.
 Wyniki należy więc interpretować jako pilotażową walidację wewnętrzną całego systemu,
-a~nie jako w~pełni zewnętrzny test generalizacji wszystkich modułów.
+a~nie jako w~pełni zewnętrzny test generalizacji wszystkich modułów. W~praktyce
+oznacza to, że właśnie \texttt{AIStyleCLIP} pozostaje najsłabszym metodologicznie
+ogniwem całego potoku i~najważniejszym punktem wymagającym niezależnej walidacji.
 
 Istotnym wk\l{}adem implementacyjnym pozostaje mechanizm \texttt{TC Conditional Boost},
 który w~badanym benchmarku był powiązany z~poprawą recall film\'{o}w granicznych
@@ -81,6 +83,8 @@ Najpilniejszym krokiem pozostaje jednak odseparowanie przygotowania modułu
 \texttt{AIStyleCLIP} od~benchmarku końcowego i~powtórzenie ewaluacji na~danych
 rozłącznych lub zewnętrznych. To ograniczenie ma obecnie największą wagę
 metodologiczną i~powinno być potraktowane priorytetowo przed dalszym tuningiem heurystyk.
+Bez takiego kroku nawet dobre wyniki całego pipeline'u należy odczytywać ostrożnie,
+ponieważ nie eliminują one ryzyka częściowo in-sample oceny tego komponentu.
 W~tym samym sensie pytanie badawcze \textbf{RQ3} należy uznać za rozstrzygnięte
 jedynie częściowo: wpływ kompresji i~przycięcia na~poszczególne moduły wynika tu
 głównie z~eksploracyjnej estymacji, analizy logów i~porównań pośrednich, a~nie

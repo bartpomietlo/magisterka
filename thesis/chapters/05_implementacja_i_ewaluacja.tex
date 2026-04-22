@@ -91,9 +91,9 @@ Użytkownik konfiguruje czułość OCR (parametr \textit{confidence}),
 gęstość próbkowania klatek (\textit{sample rate}) oraz opcjonalny
 tryb szczegółowej analizy dwufazowej.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.92\textwidth]{../photos/gui.png}
+  \includegraphics[width=0.90\textwidth]{../photos/gui.png}
   \caption{Główne okno aplikacji (PyQt6) podczas wsadowej analizy plików wideo.
     Lewy panel zawiera tabelę z~wynikami detekcji (kolumny: plik, typ materiału,
     status AI, \% wykrytych klatek, status C2PA, ścieżka do~raportu~CSV).
@@ -102,11 +102,11 @@ tryb szczegółowej analizy dwufazowej.
   \label{fig:gui_main}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.92\textwidth]{../photos/gui_description.png}
+  \includegraphics[width=0.89\textwidth]{../photos/gui_description.png}
   \caption{Interfejs aplikacji z~opisanymi elementami: (1)~przyciski dodawania
-    plików i~folderów, (2)~pasek narzędzi / pasek postępu, (3)~tabela wyników
+    plików i~folderów, (2)~górny pasek sterujący / pasek postępu, (3)~tabela wyników
     z~kolorowymi statusami detekcji, (4)~konsola logów, (5)~panel podglądu klatki,
     (6)~panel Zoom z~powiększonym obszarem detekcji.}
   \label{fig:gui_desc}
@@ -211,6 +211,9 @@ do~klasy materiałów AI (\texttt{ai\_style\_prob}).
 Praca nie raportuje odrębnej, modułowej metryki dla \texttt{AIStyleCLIP},
 ponieważ komponent ten oceniano wyłącznie jako część końcowej funkcji fuzji,
 a~jego przygotowanie częściowo współdzieli kategorie z~benchmarkiem końcowym.
+W~konsekwencji nie należy traktować go jako w~pełni niezależnie zweryfikowanego
+modułu generalizującego, lecz jako element potoku oceniany w~ramach pilotażowej
+walidacji wewnętrznej całego systemu.
 
 Wartość ta pełni w~systemie podwójną rolę. Po~pierwsze, wysoki wynik
 (\texttt{ai\_style\_prob} $\geq$ \texttt{AI\_STYLE\_CLIP\_HIGH\_CONF\_THRESHOLD})
@@ -364,18 +367,18 @@ sygnałami specyficznymi dla~AI.
 Dzięki temu nagrania w~rodzaju \enquote{Ginza in Tokyo} czy teledyski
 z~agresywną dynamiką kamery nie są błędnie klasyfikowane jako materiał AI.
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{../photos/analized_frames.png}
+  \includegraphics[width=0.90\textwidth]{../photos/analized_frames.png}
   \caption{Widok raportu wynikowego wygenerowanego przez aplikację dla jednego pliku wideo.
     Prezentuje wybrany fragment tabeli wyników z najważniejszymi kolumnami sygnałów i metadanych.
     Taki raport wspiera weryfikację decyzji klasyfikacyjnej na poziomie konkretnych atrybutów.}
   \label{fig:frames}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.85\textwidth]{../photos/analized_frames_folder.png}
+  \includegraphics[width=0.76\textwidth]{../photos/analized_frames_folder.png}
   \caption{Struktura katalogu wynikowego wygenerowanego przez aplikację
     dla~jednego pliku wideo. Katalog zawiera: zapisane klatki z~zaznaczonymi
     wykryciami (\texttt{frame\_*.jpg}), obraz mediany temporalnej
@@ -656,8 +659,9 @@ Przeprowadzona ewaluacja podlegała szeregowi ograniczeń, które znajdują się
 do~ogólności uzyskanych wyników:
 
 Najistotniejszym ograniczeniem metodologicznym pozostaje częściowo wewnętrzny
-charakter przygotowania modułu \texttt{AIStyleCLIP}; pozostałe ograniczenia
-należy interpretować na~tym tle.
+charakter przygotowania modułu \texttt{AIStyleCLIP}; jest to zarazem główna
+przeszkoda w~traktowaniu końcowego benchmarku jako w~pełni zewnętrznej walidacji
+całego potoku. Pozostałe ograniczenia należy interpretować na~tym tle.
 
 \begin{enumerate}
 
@@ -693,6 +697,7 @@ należy interpretować na~tym tle.
     W~repozytorium nie utrzymywano odrębnego, rozłącznego zbioru treningowego
     przeznaczonego wyłącznie dla tego klasyfikatora, dlatego pełna ocena jego
     generalizacji wymagałaby osobnej kampanii na~zewnętrznym zestawie danych.
+    Jest to najpoważniejsze zastrzeżenie metodologiczne wobec obecnej wersji pracy.
 
   \item \textbf{Brak szerokiej walidacji na~realnych danych.}
     Materiały \texttt{realclean} (tj.\ autentyczne nagrania pobrane z~Internetu, niepochodzące z~broadcastu i~nieposiadające graficznych nakładek)
