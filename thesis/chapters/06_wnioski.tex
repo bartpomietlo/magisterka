@@ -61,12 +61,12 @@ a~tabela porównawcza 1:1 odnosi się do wcześniejszej wersji implementacyjnej,
 nie zaś do finalnej konfiguracji opisanej w~rozdziale~5.
 
 Należy również zaznaczyć, że benchmark nie jest w~pełni niezależny względem
-wszystkich komponentów potoku, ponieważ moduł AIStyleCLIP był przygotowywany
+wszystkich komponentów potoku, ponieważ moduł \texttt{AIStyleCLIP} był przygotowywany
 na~podstawie materiałów z~kategorii wykorzystanych następnie w~ewaluacji końcowej.
 Wyniki należy więc interpretować jako pilotażową walidację wewnętrzną całego systemu,
 a~nie jako w~pełni zewnętrzny test generalizacji wszystkich modułów.
 
-Istotnym wk\l{}adem implementacyjnym pozostaje mechanizm TC Conditional Boost,
+Istotnym wk\l{}adem implementacyjnym pozostaje mechanizm \texttt{TC Conditional Boost},
 który w~badanym benchmarku był powiązany z~poprawą recall film\'{o}w granicznych
 przy niezmienionym FPR, lecz obserwacja ta nadal wymaga pełnej kampanii ablacyjnej
 na~rozłącznych danych.
@@ -77,6 +77,14 @@ Niniejsza praca stanowi punkt wyj\'{s}cia do~szeroko zakrojonych bada\'{n}
 w~obszarze detekcji multimedi\'{o}w generowanych przez~AI.
 Poni\.{z}ej przedstawiono kierunki, kt\'{o}re zdaniem autora posiadaj\k{a}
 najwi\k{e}kszy potencja\l{} naukowy i~praktyczny.
+Najpilniejszym krokiem pozostaje jednak odseparowanie przygotowania modułu
+\texttt{AIStyleCLIP} od~benchmarku końcowego i~powtórzenie ewaluacji na~danych
+rozłącznych lub zewnętrznych. To ograniczenie ma obecnie największą wagę
+metodologiczną i~powinno być potraktowane priorytetowo przed dalszym tuningiem heurystyk.
+W~tym samym sensie pytanie badawcze \textbf{RQ3} należy uznać za rozstrzygnięte
+jedynie częściowo: wpływ kompresji i~przycięcia na~poszczególne moduły wynika tu
+głównie z~eksploracyjnej estymacji, analizy logów i~porównań pośrednich, a~nie
+z~pełnej kampanii ablacyjnej.
 
 \subsection{Rozszerzenie zbioru danych testowych}
 
@@ -86,13 +94,18 @@ sk\l{}ada si\k{e} wy\l{}\k{a}cznie z~materia\l{}\'{o}w broadcastowych.
 Dalsze badania powinny obejmowa\'{c}:
 
 \begin{itemize}
-  \item \textbf{Wi\k{e}ksze zbiory darmowe} --- takie jak FaceForensics++~\cite{Rossler2019FaceForensics},
-        DFDC~\cite{Dolhansky2020DFDC} czy GenVideo~\cite{Sun2024GenVideo},
-        licz\k{a}ce dziesi\k{a}tki lub setki tysi\k{e}cy klip\'{o}w z~r\'{o}\.{z}nymi technikami syntezy;
+  \item \textbf{Współczesne zbiory text-to-video i dane rzeczywiste} --- przede wszystkim
+        GenVideo~\cite{Sun2024GenVideo}, rozwijany zbiór \texttt{realclean} oraz kolejne
+        materiały pochodzące z~aktualnych generatorów text-to-video, ponieważ najlepiej
+        odpowiadają zakresowi niniejszej pracy;
   \item \textbf{Licencjonowane bazy danych z~udokumentowaną proweniencją} ---
         komercyjne lub instytucjonalne zbiory zawieraj\k{a}ce materia\l{}y
         z~kontrolowanymi metadanymi produkcji, co~umo\.{z}liwia precyzyjn\k{a}
         weryfikacj\k{e} etykiet;
+  \item \textbf{Klasyczne benchmarki deepfake jako kontekst pomocniczy} --- takie jak
+        FaceForensics++~\cite{Rossler2019FaceForensics} i~DFDC~\cite{Dolhansky2020DFDC},
+        przydatne do~porównań metodologicznych, lecz tylko częściowo zgodne z~zakresem
+        pracy skoncentrowanej na współczesnym wideo generowanym przez AI;
   \item \textbf{Materia\l{}y z~platform spo\l{}eczno\'{s}ciowych} --- filmy pobrane z~TikToka,
         YouTube Shorts i~Instagrama, kt\'{o}re przesz\l{}y przez agresywn\k{a} rekompresj\k{e}
         transkodowania platformy, stanowi\k{a}c\k{a} jedno z~najtrudniejszych wyzwa\'{n}
@@ -142,7 +155,7 @@ bran\.{z}y mediowej na~narz\k{e}dzia weryfikacji tre\'{s}ci w~czasie rzeczywisty
 \subsection{Cyfrowe znaki wodne jako proaktywna ochrona}
 
 Obok reaktywnej detekcji warto rozwin\k{a}\'{c} badania nad~proaktywnym
-oznaczaniem tre\'{s}ci AI na~poziomie modelu generatywnego (C2PA, SynthID).
+oznaczaniem tre\'{s}ci AI na~poziomie modelu generatywnego i~standardów provenance.
 Analiza skuteczno\'{s}ci przetrwania tych znak\'{o}w po~typowych operacjach edycyjnych
 (przyci\k{e}cie, zmiana rozdzielczo\'{s}ci, transkodowanie) stanowi otwarty
 problem badawczy z~bezpo\'{s}rednim prze\l{}o\.{z}eniem na~regulacje prawne~UE

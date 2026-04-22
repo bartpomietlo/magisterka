@@ -39,15 +39,16 @@ W~warstwie analizy statystycznej sygnału wideo oraz przy~obliczaniu widma
 częstotliwościowego klatek (analiza FFT) wykorzystywana jest biblioteka
 \textbf{SciPy}.
 
-Analiza proxy sygnałów związanych z~niewidocznym watermarkingiem oraz sprawdzenie metadanych C2PA
-(\textit{Content Credentials}) realizowane są przez dedykowane moduły
-\texttt{c2pa\_detector} i~dodatkowe komponenty opierające się
-na~publicznych specyfikacjach standardu C2PA opracowanego przez
-\textit{Coalition for Content Provenance and Authenticity}.
-W~części badawczej uwzględniono również kontekst systemów provenance-first,
-takich jak \textbf{SynthID} (Google DeepMind), jako punkt odniesienia
-dla rozwiązań opartych na znakach osadzanych bezpośrednio w~procesie generacji.
-Nie stanowiło to jednak osobnego kanału ilościowej ewaluacji.
+Analiza proxy sygnałów związanych z~niewidocznym watermarkingiem
+realizowana jest przez moduły sygnałowe wykorzystujące FFT, spójność
+temporalną i~heurystyki fuzji. Niezależnie od tego walidacja metadanych
+\textbf{C2PA} (\textit{Content Credentials}) odbywa się przez dedykowany
+moduł \texttt{c2pa\_detector}, oparty na~publicznej specyfikacji
+\textit{Coalition for Content Provenance and Authenticity}. W~części
+badawczej uwzględniono ogólny kontekst systemów provenance-first jako
+punkt odniesienia dla rozwiązań opartych na~znakach osadzanych
+bezpośrednio w~procesie generacji, ale nie stanowiło to osobnego
+kanału ilościowej ewaluacji.
 
 \subsubsection*{Mapa kanałów watermarkingu i~proweniencji}
 W~implementacji rozróżniono trzy kanały weryfikacji:
@@ -55,10 +56,10 @@ W~implementacji rozróżniono trzy kanały weryfikacji:
   \item \textbf{Widoczny watermark} --- detekcja tekstu i~znaczników wizualnych
     przez OCR oraz analizę mediany temporalnej i~regionów o~niskim ruchu.
   \item \textbf{Proxy niewidocznego watermarkingu} --- sygnał wnioskowany pośrednio na podstawie anomalii residuum i~artefaktów sygnałowych
-    (FFT, spójność temporalna) oraz wyników \texttt{c2pa\_detector}; system nie dekoduje ukrytego ładunku informacyjnego
+    (FFT, spójność temporalna); system nie dekoduje ukrytego ładunku informacyjnego
     ani nie gwarantuje identyfikacji konkretnego schematu znakowania, dlatego kanał ten należy interpretować jako heurystyczny sygnał pomocniczy.
   \item \textbf{Proweniencja} --- walidacja manifestu C2PA
-    (\textit{Content Credentials}) i~metadanych pochodzenia pliku.
+    (\textit{Content Credentials}) i~metadanych pochodzenia pliku przez moduł \texttt{c2pa\_detector}.
 \end{itemize}
 
 % -------------------------------------------------------------------
@@ -204,12 +205,16 @@ z~regularyzacją L2 ($C=1{,}0$) oraz 5-krotnej walidacji stratified cross-valida
 Klasyfikator przypisuje każdemu filmowi prawdopodobieństwo przynależności
 do~klasy materiałów AI (\texttt{ai\_style\_prob}).
 
+Praca nie raportuje odrębnej, modułowej metryki dla \texttt{AIStyleCLIP},
+ponieważ komponent ten oceniano wyłącznie jako część końcowej funkcji fuzji,
+a~jego przygotowanie częściowo współdzieli kategorie z~benchmarkiem końcowym.
+
 Wartość ta pełni w~systemie podwójną rolę. Po~pierwsze, wysoki wynik
 (\texttt{ai\_style\_prob} $\geq$ \texttt{AI\_STYLE\_CLIP\_HIGH\_CONF\_THRESHOLD})
 jest traktowany jako samodzielny sygnał AI-specific, co~może wywołać
 detekcję nawet przy~niskim wyniku punktowym funkcji fuzji.
 Po~drugie, wartość ta~jest wykorzystywana jako warunek aktywacji
-heurystyki TC Conditional Boost opisanej w~sekcji~\ref{sec:tc_boost}
+heurystyki \texttt{TC Conditional Boost} opisanej w~sekcji~\ref{sec:tc_boost}
 oraz jako warunek blokujący dla~ścieżki kinematycznej opisanej
 w~sekcji~\ref{sec:cinematic_guard}.
 
@@ -243,7 +248,7 @@ s(x) = \sum_{i=1}^{m} w_i\,h_i(x) - \sum_{j=1}^{n} \lambda_j\,g_j(x) + b(x),
 \]
 gdzie $h_i(x)$ oznaczają sygnały wzmacniające hipotezę AI,
 $g_j(x)$ oznaczają sygnały korygujące charakterystyczne dla materiałów
-broadcastowych, a~$b(x)$ obejmuje bonusy warunkowe (np. TC Conditional Boost).
+broadcastowych, a~$b(x)$ obejmuje bonusy warunkowe (np. \texttt{TC Conditional Boost}).
 Decyzja klasyfikacyjna ma postać:
 \[
 \hat{y}(x)=\begin{cases}
@@ -290,11 +295,11 @@ dodatkowe mechanizmy zabezpieczające przed~fałszywymi alarmami:
 \end{itemize}
 
 % -------------------------------------------------------------------
-\section{TC Conditional Boost}
+\section{\texttt{TC Conditional Boost}}
 \label{sec:tc_boost}
 
 Jedną z~heurystyk zastosowanych w~końcowej wersji detektora jest mechanizm
-TC Conditional Boost (\textit{Temporal Consistency Boost}). Jest to~reguła
+\texttt{TC Conditional Boost} (\textit{Temporal Consistency Boost}). Jest to~reguła
 późnej fuzji działająca na~przypadkach granicznych --- filmach, których
 wynik po~zsumowaniu wszystkich sygnałów mieści się w~przedziale $s \in \{2, 3\}$
 punktów, co~bez~dodatkowej interwencji skutkowałoby klasyfikacją FN.
@@ -327,7 +332,7 @@ w~\texttt{evaluate.py}, korzystająca wyłącznie ze~stałych zdefiniowanych
 w~\texttt{fusion\_params.py}. Dzięki temu parametry heurystyki można
 modyfikować bez~ingerencji w~logikę pozostałych modułów.
 
-\section{Cinematic Path Guard}
+\section{\texttt{Cinematic Path Guard}}
 \label{sec:cinematic_guard}
 
 Dodatkowe zabezpieczenie systemu opiera się na~obserwacji, że
@@ -337,7 +342,7 @@ na~naturalnych nagraniach z~dużym ruchem --- nocnych scenach miejskich,
 efektach graficznych renderowanych w~czasie rzeczywistym czy dynamicznie
 filmowanych wydarzeniach sportowych.
 
-Mechanizm \textbf{Cinematic Path Guard} działa dwutorowo. Po~pierwsze,
+Mechanizm \texttt{Cinematic Path Guard} działa dwutorowo. Po~pierwsze,
 gdy sygnał AI-specific pochodzi wyłącznie ze~ścieżki kinematycznej
 (warunki: $\texttt{of\_count} \geq 3$, $\texttt{freq\_hf\_ratio} < 0{,}52$,
 $\texttt{of\_wide\_lower} = 0$), a~klasyfikator CLIP przypisuje
@@ -386,7 +391,8 @@ decyzji klasyfikacyjnej i~analizę błędów.
 
 Ewaluacja ilościowa opisana w~niniejszym rozdziale była przeprowadzana
 przy użyciu skryptu \texttt{evaluate.py} uruchamianego z~wiersza poleceń,
-co~zapewnia pełną reprodukowalność bez~interakcji z~interfejsem graficznym.
+co~zapewnia reprodukowalność procedury benchmarkowej bez~interakcji
+z~interfejsem graficznym.
 GUI stanowi uzupełniające narzędzie operacyjne przeznaczone do~analizy
 pojedynczych plików lub małych partii materiałów.
 Skrypt obsługuje trzy kluczowe argumenty:
@@ -555,7 +561,7 @@ interaktywne plansze studyjne) --- ich profil widmowy i~teksturowy
 jest na~tyle zbliżony do~materiałów generatywnych,
 że~żadna z~istniejących heurystyk nie jest w~stanie ich odróżnić
 bez~ryzyka pominięcia rzeczywistych materiałów AI o~podobnym charakterze.
-Ponieważ TC Conditional Boost nie aktywuje się dla~$s \geq 4$
+Ponieważ \texttt{TC Conditional Boost} nie aktywuje się dla~$s \geq 4$
 (warunek \texttt{TC\_ELIGIBLE\_SCORES}), żaden z~tych przypadków
 nie został wzmocniony przez tę heurystykę ---
 błędna klasyfikacja pochodzi wyłącznie z~bazowej funkcji fuzji.
@@ -576,12 +582,12 @@ Heurystyka & Aktywacje & w tym na TP & Główne zastosowanie \\
 \midrule
 OCR watermark & 38 & 36 & ai\_baseline z~widocznym znakiem \\
 Moduł FFT (\texttt{flux\_fft\_detector}) & 31 & 31 & wideo Sora / Runway Gen-3 \\
-AIStyleCLIP & 24 & 22 & uzupełniający sygnał semantyczny \\
-TemporalConsistency & 47 & 43 & detekcja anomalii ruchu \\
-TC Conditional Boost & 12 & 11 & przypadki graniczne, wzmacnianie \\
-clean\_ai\_rescue & 8 & 8 & klipy bez~widocznych nakładek \\
-broadcast\_score\_cap & 19 & 0 & ograniczenie FP na~materiałach telewizyjnych \\
-of\_penalty & 9 & 0 & penalizacja wysokiego optycznego ruchu \\
+\texttt{AIStyleCLIP} & 24 & 22 & uzupełniający sygnał semantyczny \\
+\texttt{TemporalConsistency} & 47 & 43 & detekcja anomalii ruchu \\
+\texttt{TC Conditional Boost} & 12 & 11 & przypadki graniczne, wzmacnianie \\
+\texttt{clean\_ai\_rescue} & 8 & 8 & klipy bez~widocznych nakładek \\
+\texttt{broadcast\_score\_cap} & 19 & 0 & ograniczenie FP na~materiałach telewizyjnych \\
+\texttt{of\_penalty} & 9 & 0 & penalizacja wysokiego optycznego ruchu \\
 C2PA & 14 & 14 & metadane proweniencji \\
 \bottomrule
 \end{tabular}
@@ -619,7 +625,8 @@ co potwierdza jej użyteczność jako ścieżki ratunkowej dla „czystych” ma
 \end{figure}
 
 \noindent Tabela ujawnia, że główną przeszkodą w~poprawie skuteczności
-jest niska liczba prawdziwych pozytywów względem całej populacji AI (55 na~95, tj.\ recall 0,605),
+jest niska liczba prawdziwych pozytywów względem całej populacji AI
+(55 na~95, tj.\ recall 0,579),
 natomiast wskaźnik fałszywych alarmów jest dobrze kontrolowany (4 na~42, tj.\ FPR 0,095).
 
 Przy N\,=\,42 próbkach negatywnych zmiana o~jeden FP przek\l{}ada si\k{e} na~\textasciitilde{}2,4\,pp ---
@@ -643,6 +650,10 @@ pilotażowym i wymagającym dalszej walidacji na większych zbiorach.
 Przeprowadzona ewaluacja podlegała szeregowi ograniczeń, które znajdują się w~bezpośredniej relacji
 do~ogólności uzyskanych wyników:
 
+Najistotniejszym ograniczeniem metodologicznym pozostaje częściowo wewnętrzny
+charakter przygotowania modułu \texttt{AIStyleCLIP}; pozostałe ograniczenia
+należy interpretować na~tym tle.
+
 \begin{enumerate}
 
   \item \textbf{Zbiór danych i~jego niezrównoważenie.}
@@ -659,7 +670,7 @@ do~ogólności uzyskanych wyników:
     przy testowaniu na~nowych generatorach.
 
   \item \textbf{Tuning heurystyk na~własnym benchmarku.}
-    Wiele heurystyk, takich jak TC Conditional Boost, Cinematic Path Guard
+    Wiele heurystyk, takich jak \texttt{TC Conditional Boost}, \texttt{Cinematic Path Guard}
     i~broadcast guard, dostrajano bezpośrednio na~własnym zbiorze ewaluacyjnym.
     Stwarza to~ryzyko częściowego przeuczenia do~charakterystyki benchmarku,
     ograniczone poprzez sweep parametrów bazowej funkcji fuzji i~wybór
@@ -668,8 +679,8 @@ do~ogólności uzyskanych wyników:
     Ideałem byłby podział na~zbiór treningowy, walidacyjny i~testowy oraz
     wczesne zatrzymanie na~podstawie metryki walidacyjnej bez~dostępu do~zbioru testowego.
 
-  \item \textbf{Częściowo wewnętrzny charakter ewaluacji modułu AIStyleCLIP.}
-    Moduł AIStyleCLIP przygotowano na~podstawie materiałów z~kategorii
+  \item \textbf{Częściowo wewnętrzny charakter ewaluacji modułu \texttt{AIStyleCLIP}.}
+    Moduł \texttt{AIStyleCLIP} przygotowano na~podstawie materiałów z~kategorii
     \texttt{ai\_baseline} i~\texttt{adv\_fp\_trap}, czyli z~tej samej rodziny kategorii,
     która została następnie wykorzystana w~ewaluacji końcowej całego potoku.
     Oznacza to, że benchmark nie jest w~pełni niezależny względem wszystkich
@@ -720,7 +731,7 @@ Tuning heurystyk na~tym samym benchmarku &
 Ryzyko częściowego przeuczenia &
 Sweep parametrów, wybór punktu Pareto; docelowo osobny split walidacyjny \\
 \addlinespace[2pt]
-Częściowo wewnętrzny charakter AIStyleCLIP &
+Częściowo wewnętrzny charakter \texttt{AIStyleCLIP} &
 Ryzyko zawyżenia oceny tego komponentu względem danych końcowych &
 Docelowo rozłączny train/validation/test lub zewnętrzny zbiór dla modułu CLIP \\
 \addlinespace[2pt]
@@ -770,14 +781,19 @@ Bez OF, zredukowane próbkowanie & 0{,}326 & 0{,}381 & $\approx$0{,}8\,s \\
 Estymacja wskazuje na~istotną hierarchię sygnałów: wyłączenie FFT i~CLIP obniża recall
 o~2--4~pp przy~niezmiennym FPR, natomiast wyłączenie optical flow powoduje
 ponad czterokrotny wzrost fałszywych alarmów. Guardy heurystyczne oparte na~warunkach
-\texttt{of\_count~$\leq$~8} i~\texttt{sora\_static\_override} trywialnie aktywowały
+\texttt{of\_count~$\leq$~8} i~statycznej ścieżce ratunkowej dla części klipów Sora trywialnie aktywowały
 się przy~wyłączonym detektorze przepływu, co~potwierdza, że ich projektowanie zakłada
 obecność sygnału OF jako kotwicy decyzyjnej.
 Opis ten uzasadnia pozostawienie pełnego potoku jako konfiguracji domyślnej,
 ale nie zastępuje przyszłej, w~pełni zmierzonej kampanii ablacyjnej.
 
+\noindent\textit{Uwaga:} czasy z~tabeli~\ref{tab:ablation} pochodzą z~oddzielnych,
+eksploracyjnych pomiarów wariantów potoku i~mają charakter względny; nie należy ich
+porównywać wprost ze średnim czasem z~wyjścia CLI, które odnosi się do osobnego,
+pełnego przebiegu benchmarku na zbiorze 137~plików.
+
 % -------------------------------------------------------------------
-\section{Reprodukowalność eksperymentu}
+\section{Reprodukowalność procedury eksperymentalnej}
 \label{sec:reprodukowalnosc}
 
 Ewaluację przeprowadzono w~środowisku \textbf{Python~3.11} na~systemie \textbf{Windows~11}.
@@ -792,8 +808,8 @@ Kluczowe biblioteki:
   \item \textbf{scikit-learn}~1.5 (metryki i~ewaluacja)
 \end{itemize}
 
-Kod źródłowy systemu dostępny jest w~repozytorium projektu pod adresem
-\url{https://github.com/bartpomietlo/magisterka}.
+Kod źródłowy systemu dostępny jest w~repozytorium projektu:
+\href{https://github.com/bartpomietlo/magisterka}{github.com/bartpomietlo/magisterka}.
 Implementacja opierała się na~dokumentacjach technicznych bibliotek
 \textbf{OpenCV}, \textbf{PyQt6}, \textbf{EasyOCR} i~specyfikacji
 \textbf{C2PA}, natomiast warstwę koncepcyjną wspierały publikacje
@@ -809,21 +825,16 @@ python kod/dataset/evaluate.py --mode standard \
 
 Dodając do~katalogu plik \texttt{labels.csv} z~kolumnami
 \texttt{filename} i~\texttt{ground\_truth}, skrypt automatycznie
-oblicza recall i~FPR po~zakończeniu i~wypisuje podsumowanie, np.
-Poniższe wyjście CLI dotyczy pełnego zbioru 137~próbek; recall dla samej kategorii
-\texttt{ai\_baseline} wynosi 0{,}605 (tabela~\ref{tab:eval_results}):
+oblicza recall i~FPR po~zakończeniu i~wypisuje podsumowanie. Poniższe wyjście CLI
+dotyczy pełnego zbioru 137~próbek, a~więc recall 0{,}579 odnosi się do wszystkich
+95~próbek dodatnich łącznie; dla samej kategorii \texttt{ai\_baseline}
+wartość wynosi 0{,}605 (tabela~\ref{tab:eval_results}):
 \begin{verbatim}
 [SUMMARY] Pliki: 137  Przeanalizowane: 137
 [SUMMARY] Czas analizy: sredni=4.21s  min=1.83s  max=11.04s
 [SUMMARY] TP=55 FN=40 FP=4 TN=38
 [SUMMARY] Recall=0.579  FPR=0.095
-\end{verbatim}%
-\footnotemark
-
-\footnotetext{Wartość Recall=0{,}579 w~powyższym podsumowaniu obejmuje łącznie
-kategorie \texttt{ai\_baseline}, \texttt{adv\_compressed} i~\texttt{adv\_cropped}
-(95~próbek pozytywnych łącznie). Dla samej kategorii \texttt{ai\_baseline}
-Recall wynosi 0{,}605 (tabela~\ref{tab:eval_results}).}
+\end{verbatim}
 
 Model \texttt{clip\_classifier.pkl} przygotowano skryptem
 \texttt{kod/tools/train\_clip\_classifier.py} na podstawie 8~równomiernie
