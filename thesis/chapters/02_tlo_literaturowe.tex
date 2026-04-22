@@ -146,7 +146,7 @@ Modele takie jak HiDDeN \cite{Zhu2018HiDDeN}
 i~jego nast\k{e}pcy ucz\k{a} si\k{e} osadza\'{c} bity informacji w~pikselach obrazu
 w~spos\'{o}b niezauwa\.{z}alny dla cz\l{}owieka, ale wykrywalny przez dekoder.
 Luo et al.\ \cite{Luo2025WatermarkingAIGC} dokonali przegl\k{a}du metod
-znakowania wodnego dla tre\'{s}ci AIGC, wykazuj\k{a}c,
+znakowania wodnego dla tre\'{s}ci AIGC (ang.\ \textit{AI-Generated Content}), wykazuj\k{a}c,
 \.{z}e aktualne metody s\k{a} podatne na~ataki transformacji (zmiana rozdzielczo\'{s}ci,
 kompresja JPEG, konwersja formatu wideo).
 Najaf-Abadi et al.\ \cite{NajafAbadi2024RobustWatermark} zaproponowali
@@ -266,3 +266,13 @@ ani te\.{z} nie rozwi\k{a}zuje problemu wykrywania manipulacji w~materia\l{}ach
 rzeczywistych (deepfakes twarzy). Zakres ten jest uzasadniony praktycznymi
 zastosowaniami w~weryfikacji zawarto\'{s}ci wideo oraz dost\k{e}pno\'{s}ci\k{a}
 danych treningowych dla wybranych modeli.
+
+Zidentyfikowane w~literaturze ograniczenia --- przede wszystkim słaba generalizacja
+międzygeneratorowa, podatność na~fałszywe alarmy w~materiałach broadcastowych oraz
+niedostateczna kalibracja pod~niski FPR --- uzasadniają wybór podejścia
+wielosygnałowego i~konserwatywnego punktu pracy. Zamiast opierać system na~jednym
+modelu uczonym end-to-end, w~niniejszej pracy przyjęto architekturę łączącą sygnały
+obrazu, ruchu i~proweniencji, a~następnie filtrowaną przez heurystyki ochronne.
+Takie podejście nie eliminuje problemów generalizacji, ale lepiej odpowiada
+pilotowemu scenariuszowi redakcyjnemu, w~którym koszt fałszywego alarmu pozostaje
+szczególnie wysoki.

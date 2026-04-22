@@ -1,7 +1,8 @@
 \chapter{Implementacja i~ewaluacja systemu detekcji}
 
 System zaprojektowano jako narzędzie do~wsadowej analizy \textbf{plików wideo}
-pod~kątem śladów pochodzenia generatywnego: watermarków jawnych i~ukrytych,
+pod~kątem śladów pochodzenia generatywnego: widocznych watermarków oraz pośrednich
+sygnałów sugerujących niewidoczne znakowanie wodne (sygnał proxy),
 metadanych C2PA oraz artefaktów sygnałowych. Priorytetem projektowym był
 \textbf{niski FPR} na~materiałach broadcastowych, ponieważ to~one najczęściej
 zawierają dynamiczne nakładki mylone z~cechami AI.
@@ -104,11 +105,10 @@ tryb szczegółowej analizy dwufazowej.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.92\textwidth]{../photos/gui_description.png}
-  \caption{Interfejs aplikacji z~opisanymi elementami: (1)~tabela wyników
-    z~kolorowymi statusami detekcji --- \textcolor{red}{czerwony} dla~wykrytego AI,
-    szary dla~materiału bez~sygnału; (2)~konsola logów prezentująca
-    kolejne etapy przetwarzania; (3)~panel podglądu klatki; (4)~panel Zoom
-    z~powiększonym obszarem detekcji watermarku.}
+  \caption{Interfejs aplikacji z~opisanymi elementami: (1)~przyciski dodawania
+    plików i~folderów, (2)~pasek narzędzi / pasek postępu, (3)~tabela wyników
+    z~kolorowymi statusami detekcji, (4)~konsola logów, (5)~panel podglądu klatki,
+    (6)~panel Zoom z~powiększonym obszarem detekcji.}
   \label{fig:gui_desc}
 \end{figure}
 
@@ -148,6 +148,9 @@ Przykładowe wywołanie:
 python kod/dataset/evaluate.py --input ./videos \
   --output results.csv --mode standard
 \end{verbatim}
+
+\noindent\textit{Uwaga:} zapis powyżej ma charakter wielowierszowy; w~środowisku
+Windows~11 należy usunąć znaki \texttt{\textbackslash} i~wpisać komendę w~jednej linii.
 
 
 
@@ -266,7 +269,8 @@ Poszczególne sygnały wnoszą następujące wartości punktowe:
 obecność przepływu optycznego i~niski stosunek obszaru nakładki~(+1~każdy),
 niska wariancja tekstury i~niski udział HF przy~kształcie AI~(+1~każdy),
 regiony zero-variance~(+1), narożna, kompaktowa nakładka~(+1),
-niewidzialny watermark~(+2), metadane C2PA~AI~(+2), sygnał Flux~(+3).
+niewidzialny watermark~(+2), metadane C2PA~AI~(+2), sygnał modułu Flux
+(\texttt{flux\_fft\_detector})~(+3).
 Korekty negatywne eliminują wzorce charakterystyczne dla~transmisji sportowych
 i~pasków informacyjnych: szeroki dolny overlay~($-2$), heurystyki
 scoreboard/billboard/lower-third~(od~$-2$ do~$-3$).
@@ -277,18 +281,18 @@ Oprócz podstawowej funkcji punktowej w~systemie działają trzy
 dodatkowe mechanizmy zabezpieczające przed~fałszywymi alarmami:
 
 \begin{itemize}
-  \item \textbf{broadcast\_score\_cap} --- ogranicza wynik do~3~punktów
+  \item \textbf{\texttt{broadcast\_score\_cap}} --- ogranicza wynik do~3~punktów
     dla~filmów, które uaktywniły pułapkę wzorca broadcastowego,
     a~nie mają potwierdzenia AI z~C2PA ani Flux;
-  \item \textbf{of\_penalty} --- odejmuje~2~punkty, gdy liczba regionów
+  \item \textbf{\texttt{of\_penalty}} --- odejmuje~2~punkty, gdy liczba regionów
     przepływu optycznego przekracza~20 przy~braku sygnału AI-specific,
     co~chroni przed~detekcją dynamicznych nagrań sportowych i~koncertowych;
-  \item \textbf{high\_score\_override\_guard} --- wynik punktowy powyżej progu
+  \item \textbf{\texttt{high\_score\_override\_guard}} --- wynik punktowy powyżej progu
     \texttt{HIGH\_SCORE\_OVERRIDE\_THRESHOLD} (domyślnie~6) nie wywołuje
     detekcji, jeżeli \texttt{ai\_specific}~$= 0$; chroni to~przed sytuacją,
     w~której duże bonusy FFT na~materiale broadcastowym sztucznie zawyżają
     wynik bez~potwierdzenia ze~strony sygnałów specyficznych dla~AI;
-  \item \textbf{clean\_ai\_rescue} --- specjalna ścieżka detekcji dla~filmów
+  \item \textbf{\texttt{clean\_ai\_rescue}} --- specjalna ścieżka detekcji dla~filmów
     bez~widocznych nakładek, z~niskim udziałem HF i~bez~jakichkolwiek
     sygnałów broadcastowych, dedykowana materiałom Sora i~Runway Gen3,
     które nie zawierają watermarków tekstowych.
@@ -342,7 +346,8 @@ na~naturalnych nagraniach z~dużym ruchem --- nocnych scenach miejskich,
 efektach graficznych renderowanych w~czasie rzeczywistym czy dynamicznie
 filmowanych wydarzeniach sportowych.
 
-Mechanizm \texttt{Cinematic Path Guard} działa dwutorowo. Po~pierwsze,
+Mechanizm \texttt{Cinematic Path Guard} (heurystyka \texttt{cinematic\_rescue\_guard})
+działa dwutorowo. Po~pierwsze,
 gdy sygnał AI-specific pochodzi wyłącznie ze~ścieżki kinematycznej
 (warunki: $\texttt{of\_count} \geq 3$, $\texttt{freq\_hf\_ratio} < 0{,}52$,
 $\texttt{of\_wide\_lower} = 0$), a~klasyfikator CLIP przypisuje
@@ -809,7 +814,7 @@ Kluczowe biblioteki:
 \end{itemize}
 
 Kod źródłowy systemu dostępny jest w~repozytorium projektu:
-\href{https://github.com/bartpomietlo/magisterka}{github.com/bartpomietlo/magisterka}.
+\url{https://github.com/bartpomietlo/magisterka}.
 Implementacja opierała się na~dokumentacjach technicznych bibliotek
 \textbf{OpenCV}, \textbf{PyQt6}, \textbf{EasyOCR} i~specyfikacji
 \textbf{C2PA}, natomiast warstwę koncepcyjną wspierały publikacje
