@@ -208,6 +208,8 @@ def main() -> None:
     parser.add_argument("--n_frames", type=int, default=30)
     parser.add_argument("--method", type=str, default="QIM")
     parser.add_argument("--strength", type=float, default=8.0)
+    parser.add_argument("--save_frames", action="store_true",
+                        help="Zapisz klatki PNG (domyslnie wylaczone)")
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -220,7 +222,7 @@ def main() -> None:
     watermark = POTWatermark(method=str(args.method).upper())
 
     # folder na zapisy klatek (opcjonalnie - zawsze tworzymy, bo wymaganie mówi "zapisz")
-    frames_root = out_csv.parent / "watermark_frames" / out_csv.stem
+    frames_root = (out_csv.parent / "watermark_frames" / out_csv.stem) if args.save_frames else None
 
     video_exts = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg", ".mpg"}
     videos = [p for p in sorted(input_dir.iterdir()) if p.is_file() and p.suffix.lower() in video_exts]
@@ -230,8 +232,8 @@ def main() -> None:
         return
 
     all_rows: list[pd.DataFrame] = []
-    for video_path in tqdm(videos, desc="Watermark eval"):
-        per_video_frames_dir = frames_root / video_path.stem
+    for vid_idx, video_path in enumerate(tqdm(videos, desc="Watermark eval")):
+        per_video_frames_dir = (frames_root / f"video_{vid_idx:04d}") if frames_root else None
         df_video = evaluate_video(
             video_path=video_path,
             watermark=watermark,
