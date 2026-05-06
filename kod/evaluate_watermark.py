@@ -10,9 +10,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from agh_watermark import AGHWatermark
 from pot_watermark import POTWatermark, compute_psnr, compute_ssim
 
 AttackName = Literal["clean", "h264_jpeg_q75", "crop_center_0.8", "resize_0.5_bicubic"]
+WatermarkMethod = Literal["QIM", "AGH_NONEXP", "AGH_EXP", "AGH_SPARSE"]
 
 
 def _sample_frame_indices(total_frames: int, n_samples: int) -> list[int]:
@@ -104,7 +106,7 @@ def _aggregate_frame_results(frame_results: list[dict[str, Any]]) -> dict[str, A
 
 def evaluate_video(
     video_path: Path,
-    watermark: POTWatermark,
+    watermark: POTWatermark | AGHWatermark,
     method: str,
     strength: float,
     n_frames: int,
@@ -207,6 +209,13 @@ def main() -> None:
     parser.add_argument("--output_csv", type=str, default="results_watermark.csv")
     parser.add_argument("--n_frames", type=int, default=30)
     parser.add_argument("--method", type=str, default="QIM")
+    parser.add_argument(
+        "--watermark_method",
+        type=str,
+        default="QIM",
+        choices=["QIM", "AGH_NONEXP", "AGH_EXP", "AGH_SPARSE"],
+        help="Wybierz obecny POT/QIM albo watermark AGH z transformata NONEXP/EXP/SPARSE.",
+    )
     parser.add_argument("--strength", type=float, default=8.0)
     parser.add_argument("--save_frames", action="store_true",
                         help="Zapisz klatki PNG (domyslnie wylaczone)")
@@ -219,7 +228,18 @@ def main() -> None:
     out_csv = Path(args.output_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    watermark = POTWatermark(method=str(args.method).upper())
+    watermark_method: WatermarkMethod = str(args.watermark_method).upper()  # type: ignore[assignment]
+    if watermark_method == "QIM":
+        eval_method = str(args.method).upper()
+        watermark: POTWatermark | AGHWatermark = POTWatermark(method=eval_method)
+    else:
+        agh_transform_map = {
+            "AGH_NONEXP": "NONEXP",
+            "AGH_EXP": "EXP",
+            "AGH_SPARSE": "SPARSE_NONEXP",
+        }
+        eval_method = agh_transform_map[watermark_method]
+        watermark = AGHWatermark(transform_type=eval_method)
 
     # folder na zapisy klatek (opcjonalnie - zawsze tworzymy, bo wymaganie mówi "zapisz")
     frames_root = (out_csv.parent / "watermark_frames" / out_csv.stem) if args.save_frames else None
@@ -237,7 +257,7 @@ def main() -> None:
         df_video = evaluate_video(
             video_path=video_path,
             watermark=watermark,
-            method=str(args.method).upper(),
+            method=eval_method,
             strength=float(args.strength),
             n_frames=int(args.n_frames),
             output_frames_dir=per_video_frames_dir,
