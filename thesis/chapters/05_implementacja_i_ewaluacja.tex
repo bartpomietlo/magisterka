@@ -205,6 +205,9 @@ używany jest uprzednio wytrenowany klasyfikator binarny
 (\texttt{clip\_classifier.pkl}). Model uczono na~zbiorze \texttt{ai\_baseline}
 vs.\ \texttt{adv\_fp\_trap} przy użyciu \textit{Logistic Regression}
 z~regularyzacją L2 ($C=1{,}0$) oraz 5-krotnej walidacji stratified cross-validation.
+Należy zaznaczyć, że trening klasyfikatora i końcowa ewaluacja detektora
+korzystają z materiałów tej samej domeny, co może zawyżać raportowane metryki
+względem scenariusza w pełni zewnętrznego.
 Klasyfikator przypisuje każdemu filmowi prawdopodobieństwo przynależności
 do~klasy materiałów AI (\texttt{ai\_style\_prob}).
 
@@ -263,6 +266,9 @@ Decyzja klasyfikacyjna ma postać:
 \end{cases}
 \quad T=5.
 \]
+Wagi i próg dobrano empirycznie metodą przeszukiwania siatki na własnym
+benchmarku; nie wynikają z modelu probabilistycznego ani kalibracji na zbiorze
+niezależnym.
 W~praktycznej implementacji współczynniki $w_i$ i~$\lambda_j$ odpowiadają
 stałym punktowym przypisanym do~sygnałów na~liście poniżej
 (np. $w_i \in \{1,2,3\}$ dla sygnałów wzmacniających oraz
@@ -458,18 +464,21 @@ dodatnie nie mają własnych liczników FP.
 \centering
 \caption{Metryki klasyfikacji końcowej wersji detektora}
 \label{tab:eval_results}
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrrrrl}
 \toprule
-Kategoria & $N$ & TP & FN & Recall & FPR \\
+Kategoria & $N$ & TP & FN & Recall & FPR & 95\% CI \\
 \midrule
-\texttt{ai\_baseline}    & 43  & 26 & 17 & 0{,}605 & --- \\
-\texttt{adv\_compressed} & 26  & 15 & 11 & 0{,}577 & --- \\
-\texttt{adv\_cropped}    & 26  & 14 & 12 & 0{,}538 & --- \\
-\texttt{adv\_fp\_trap}   & 42  & --- & --- & ---     & 0{,}095 \\
-\textbf{Globalnie}       & 137 & 55 & 40 & 0{,}579 & 0{,}095 \\
+\texttt{ai\_baseline}    & 43  & 26 & 17 & 0{,}605 & ---     & [0.46, 0.74] \\
+\texttt{adv\_compressed} & 26  & 15 & 11 & 0{,}577 & ---     & --- \\
+\texttt{adv\_cropped}    & 26  & 14 & 12 & 0{,}538 & ---     & --- \\
+\texttt{adv\_fp\_trap}   & 42  & --- & --- & ---     & 0{,}095 & [0.04, 0.22] \\
+\textbf{Globalnie}       & 137 & 55 & 40 & 0{,}579 & 0{,}095 & [0.04, 0.22] \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Szerokość przedziałów ufności odzwierciedla ograniczoną liczebność zbioru
+i należy je traktować jako wynik pilotażowy.
 
 \noindent\textit{Nota: Dla kategorii \texttt{adv\_fp\_trap} (klasa negatywna)
 recall nie jest zdefiniowany, dlatego podano wyłącznie FPR. Standardowe F1
@@ -652,7 +661,7 @@ przedziały ufności dla tych wskaźników są szerokie, co czyni wyniki charakt
 pilotażowym i wymagającym dalszej walidacji na większych zbiorach.
 
 % -------------------------------------------------------------------
-\section{Ewaluacja watermarkingu}
+\subsection{Ewaluacja watermarkingu}
 \label{sec:watermark_eval}
 
 Celem dodatkowej ewaluacji było porównanie klasycznego algorytmu QIM
