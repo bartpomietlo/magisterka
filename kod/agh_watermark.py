@@ -5,7 +5,10 @@ from typing import Any, Literal
 import cv2
 import numpy as np
 
-from pot_watermark import compute_psnr
+try:
+    from .pot_watermark import compute_psnr
+except ImportError:
+    from pot_watermark import compute_psnr
 
 TransformType = Literal["NONEXP", "EXP", "SPARSE_NONEXP"]
 
@@ -22,6 +25,28 @@ class AGHWatermark:
     BLOCK = 8
     PAYLOAD_BITS = 32
     QIM_BASE_STEP = 16.0
+    ROBUST_CHANNELS: dict[str, tuple[tuple[int, int], ...]] = {
+        # Adaptive channel ranking is not stable after resize/JPEG. DC is less
+        # elegant than the middle-channel M5 choice, but it keeps embed/extract
+        # synchronized under low-pass attacks.
+        "NONEXP": ((0, 0),),
+        "EXP": ((0, 0),),
+        "SPARSE_NONEXP": ((0, 0),),
+    }
+    STEP_MULTIPLIERS: dict[str, float] = {
+        # AGH coefficients live on a different scale than the DCT QIM baseline.
+        # These defaults keep strength=8 useful after resize_0.5. SPARSE_NONEXP
+        # needs a stronger step because its DC quantization is less stable after
+        # low-pass resampling.
+        "NONEXP": 12.0,
+        "EXP": 6.0,
+        "SPARSE_NONEXP": 18.0,
+    }
+    SLOT_SEEDS: dict[str, int] = {
+        "NONEXP": 104729,
+        "EXP": 130363,
+        "SPARSE_NONEXP": 155921,
+    }
 
     def __init__(self, transform_type: TransformType | str = "NONEXP") -> None:
         self.default_transform_type = self._normalize_transform_type(transform_type)
@@ -175,17 +200,30 @@ class AGHWatermark:
             self._matrix_cache[normalized] = (matrix, c_norm)
         return self._matrix_cache[normalized]
 
-    def _qim_step(self, strength: float) -> float:
-        return max(1.0, self.QIM_BASE_STEP * float(strength) / 8.0)
+    def _qim_step(self, strength: float, transform_type: TransformType | str | None = None) -> float:
+        transform_name = self._normalize_transform_type(transform_type or self.default_transform_type)
+        multiplier = self.STEP_MULTIPLIERS[transform_name]
+        return max(1.0, self.QIM_BASE_STEP * multiplier * float(strength) / 8.0)
 
-    def _modify_coeff(self, coeff: float, bit: int, strength: float) -> float:
-        step = self._qim_step(strength)
+    def _modify_coeff(
+        self,
+        coeff: float,
+        bit: int,
+        strength: float,
+        transform_type: TransformType | str | None = None,
+    ) -> float:
+        step = self._qim_step(strength, transform_type)
         q0 = float(np.round(coeff / step) * step)
         q1 = float(np.round((coeff - step / 2.0) / step) * step + step / 2.0)
         return q1 if (int(bit) & 1) else q0
 
-    def _decode_coeff(self, coeff: float, strength: float) -> int:
-        step = self._qim_step(strength)
+    def _decode_coeff(
+        self,
+        coeff: float,
+        strength: float,
+        transform_type: TransformType | str | None = None,
+    ) -> int:
+        step = self._qim_step(strength, transform_type)
         q0 = float(np.round(coeff / step) * step)
         q1 = float(np.round((coeff - step / 2.0) / step) * step + step / 2.0)
         return 0 if abs(coeff - q0) <= abs(coeff - q1) else 1
@@ -231,10 +269,21 @@ class AGHWatermark:
         selected = order[margin : len(order) - margin]
         return [(int(idx // 8), int(idx % 8)) for idx in selected]
 
+    def _robust_channels(self, transform_type: TransformType | str | None) -> tuple[tuple[int, int], ...]:
+        transform_name = self._normalize_transform_type(transform_type or self.default_transform_type)
+        return self.ROBUST_CHANNELS[transform_name]
+
+    def _slot_order(self, n_blocks: int, n_channels: int, transform_type: TransformType | str | None) -> np.ndarray:
+        transform_name = self._normalize_transform_type(transform_type or self.default_transform_type)
+        slots = np.arange(int(n_blocks) * int(n_channels), dtype=np.int64)
+        rng = np.random.default_rng(self.SLOT_SEEDS[transform_name])
+        rng.shuffle(slots)
+        return slots
+
     def embed(
         self,
         frame_bgr: np.ndarray,
-        frame_id: int = 0,
+        frame_id: int | bytes = 0,
         method: str | None = None,
         strength: float = 8.0,
         bit_payload: bytes | None = None,
@@ -250,7 +299,10 @@ class AGHWatermark:
             raise ValueError("frame_bgr musi byc obrazem BGR o ksztalcie (H,W,3+)")
 
         transform_name = self._normalize_transform_type(transform_type or method or self.default_transform_type)
-        payload_bits = self._bytes_to_bits(bit_payload) if bit_payload is not None else self._build_payload_bits(frame_id)
+        if isinstance(frame_id, (bytes, bytearray)) and bit_payload is None:
+            bit_payload = bytes(frame_id)
+            frame_id = 0
+        payload_bits = self._bytes_to_bits(bit_payload) if bit_payload is not None else self._build_payload_bits(int(frame_id))
 
         h, w = frame_bgr.shape[:2]
         if h < self.BLOCK or w < self.BLOCK or not payload_bits:
@@ -271,23 +323,23 @@ class AGHWatermark:
         for idx, block in enumerate(blocks):
             spectra[idx] = self._forward(matrix, block, c_norm)
 
-        channels = self._select_channels(spectra)
+        channels = self._robust_channels(transform_name)
+        slot_order = self._slot_order(spectra.shape[0], len(channels), transform_name)
         capacity = int(spectra.shape[0] * len(channels))
-        write_limit = min(capacity, len(payload_bits) * 8)
+        write_limit = min(capacity, len(payload_bits) * 32)
         write_count = 0
-        for block_idx in range(spectra.shape[0]):
-            for row, col in channels:
-                if write_count >= write_limit:
-                    break
-                bit = payload_bits[write_count % len(payload_bits)]
-                spectra[block_idx, row, col] = self._modify_coeff(
-                    float(spectra[block_idx, row, col]),
-                    bit,
-                    strength,
-                )
-                write_count += 1
-            if write_count >= write_limit:
-                break
+        for slot in slot_order[:write_limit]:
+            block_idx = int(slot) // len(channels)
+            channel_idx = int(slot) % len(channels)
+            row, col = channels[channel_idx]
+            bit = payload_bits[write_count % len(payload_bits)]
+            spectra[block_idx, row, col] = self._modify_coeff(
+                float(spectra[block_idx, row, col]),
+                bit,
+                strength,
+                transform_name,
+            )
+            write_count += 1
 
         rec_blocks = np.empty_like(blocks)
         for idx, spectrum in enumerate(spectra):
@@ -302,6 +354,8 @@ class AGHWatermark:
             "transform_type": transform_name,
             "bits_embedded": min(len(payload_bits), capacity),
             "coefficients_modified": write_count,
+            "qim_step": self._qim_step(strength, transform_name),
+            "channels": channels,
             "payload_bits": payload_bits,
             "blocks_used": int(blocks.shape[0]),
         }
@@ -349,19 +403,16 @@ class AGHWatermark:
         for idx, block in enumerate(blocks):
             spectra[idx] = self._forward(matrix, block, c_norm)
 
-        channels = self._select_channels(spectra)
+        channels = self._robust_channels(transform_name)
+        slot_order = self._slot_order(spectra.shape[0], len(channels), transform_name)
         votes: list[list[int]] = [[] for _ in range(n_bits)]
-        read_count = 0
-        read_limit = min(int(spectra.shape[0] * len(channels)), n_bits * 8)
-        for block_idx in range(spectra.shape[0]):
-            for row, col in channels:
-                if read_count >= read_limit:
-                    break
-                bit = self._decode_coeff(float(spectra[block_idx, row, col]), strength)
-                votes[read_count % n_bits].append(bit)
-                read_count += 1
-            if read_count >= read_limit:
-                break
+        read_limit = min(int(spectra.shape[0] * len(channels)), n_bits * 32)
+        for read_count, slot in enumerate(slot_order[:read_limit]):
+            block_idx = int(slot) // len(channels)
+            channel_idx = int(slot) % len(channels)
+            row, col = channels[channel_idx]
+            bit = self._decode_coeff(float(spectra[block_idx, row, col]), strength, transform_name)
+            votes[read_count % n_bits].append(bit)
 
         out_bits: list[int] = []
         for bit_votes in votes:

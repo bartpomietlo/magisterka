@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 from pathlib import Path
 from typing import Any, Literal
+
+# Silence noisy native FFmpeg/OpenCV decoder diagnostics such as:
+# "[h264] mmco: unref short failure". These are common for imperfect H.264
+# streams and otherwise corrupt tqdm output even when OpenCV can read frames.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")
 
 import cv2
 import numpy as np
@@ -16,6 +23,39 @@ from pot_watermark import POTWatermark, compute_psnr, compute_ssim
 AttackName = Literal["clean", "h264_jpeg_q75", "crop_center_0.8", "resize_0.5_bicubic"]
 WatermarkMethod = Literal["QIM", "AGH_NONEXP", "AGH_EXP", "AGH_SPARSE"]
 
+try:
+    cv2.setLogLevel(0)
+except Exception:
+    pass
+
+
+@contextmanager
+def _suppress_native_stderr(enabled: bool = True):
+    """
+    Temporarily redirects file descriptor 2 to nul/devnull.
+
+    FFmpeg messages emitted through OpenCV are native stderr writes, so Python
+    warnings filters do not catch them. Keep this scoped to VideoCapture calls
+    so progress bars and final summaries still print normally.
+    """
+    if not enabled:
+        yield
+        return
+
+    saved_stderr_fd = None
+    devnull_fd = None
+    try:
+        saved_stderr_fd = os.dup(2)
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull_fd, 2)
+        yield
+    finally:
+        if saved_stderr_fd is not None:
+            os.dup2(saved_stderr_fd, 2)
+            os.close(saved_stderr_fd)
+        if devnull_fd is not None:
+            os.close(devnull_fd)
+
 
 def _sample_frame_indices(total_frames: int, n_samples: int) -> list[int]:
     if total_frames <= 0:
@@ -26,9 +66,10 @@ def _sample_frame_indices(total_frames: int, n_samples: int) -> list[int]:
     return [int(i) for i in idxs]
 
 
-def _read_frame_by_index(cap: cv2.VideoCapture, idx: int) -> np.ndarray | None:
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
-    ok, frame = cap.read()
+def _read_frame_by_index(cap: cv2.VideoCapture, idx: int, suppress_decoder_warnings: bool = True) -> np.ndarray | None:
+    with _suppress_native_stderr(suppress_decoder_warnings):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+        ok, frame = cap.read()
     if not ok or frame is None:
         return None
     return frame
@@ -111,9 +152,12 @@ def evaluate_video(
     strength: float,
     n_frames: int,
     output_frames_dir: Path | None,
+    suppress_decoder_warnings: bool = True,
 ) -> pd.DataFrame:
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
+    with _suppress_native_stderr(suppress_decoder_warnings):
+        cap = cv2.VideoCapture(str(video_path))
+        opened = cap.isOpened()
+    if not opened:
         raise RuntimeError(f"Nie mozna otworzyc wideo: {video_path}")
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -125,7 +169,7 @@ def evaluate_video(
     # Odczyt klatek
     frames_orig: list[np.ndarray] = []
     for idx in idxs:
-        frame = _read_frame_by_index(cap, idx)
+        frame = _read_frame_by_index(cap, idx, suppress_decoder_warnings=suppress_decoder_warnings)
         if frame is None:
             continue
         frames_orig.append(frame)
@@ -219,6 +263,11 @@ def main() -> None:
     parser.add_argument("--strength", type=float, default=8.0)
     parser.add_argument("--save_frames", action="store_true",
                         help="Zapisz klatki PNG (domyslnie wylaczone)")
+    parser.add_argument(
+        "--show_decoder_warnings",
+        action="store_true",
+        help="Pokaz natywne ostrzezenia dekodera FFmpeg/OpenCV, np. '[h264] mmco...'.",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
@@ -261,6 +310,7 @@ def main() -> None:
             strength=float(args.strength),
             n_frames=int(args.n_frames),
             output_frames_dir=per_video_frames_dir,
+            suppress_decoder_warnings=not bool(args.show_decoder_warnings),
         )
         if not df_video.empty:
             all_rows.append(df_video)
