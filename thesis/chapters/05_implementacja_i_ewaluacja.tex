@@ -652,6 +652,60 @@ przedziały ufności dla tych wskaźników są szerokie, co czyni wyniki charakt
 pilotażowym i wymagającym dalszej walidacji na większych zbiorach.
 
 % -------------------------------------------------------------------
+\section{Ewaluacja watermarkingu}
+\label{sec:watermark_eval}
+
+Celem dodatkowej ewaluacji było porównanie klasycznego algorytmu QIM
+działającego w~dziedzinie DCT z~trzema wariantami watermarkingu opartymi
+na nowych transformatach ortogonalnych zaproponowanych przez Bogackiego
+i~Dziecha~\cite{bogacki2022analysis}: NONEXP, EXP oraz SPARSE\_NONEXP.
+Eksperyment przeprowadzono na zbiorze 99 filmów AI-generowanych
+(\texttt{ai\_baseline}), analizując po 30 klatek z~każdego filmu
+i~cztery scenariusze ataku.
+
+\begin{table}[ht]
+\centering
+\caption{Porównanie metod watermarkingu --- payload recovery rate i PSNR na zbiorze ai\_baseline (N=99)}
+\label{tab:watermark_comparison}
+\begin{tabular}{lrrrr}
+\toprule
+Atak & QIM & AGH\_NONEXP & AGH\_EXP & AGH\_SPARSE \\
+\midrule
+Brak ataku (clean) & \num{1.000} & \num{0.991} & \num{0.992} & \num{0.993} \\
+Zmiana rozdzielczości 50\% & \num{0.987} & \num{0.991} & \num{0.991} & \num{0.993} \\
+Kompresja H.264/JPEG q75 & \num{0.800} & \num{0.991} & \num{0.992} & \num{0.992} \\
+Przycięcie 80\% centrum & \num{0.000} & \num{0.000} & \num{0.000} & \num{0.000} \\
+PSNR clean (dB) & \num{45.9} & \num{44.0} & \num{48.1} & \num{41.1} \\
+SSIM clean & \num{0.983} & \num{0.982} & \num{0.992} & \num{0.975} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Wyniki wskazują, że wszystkie warianty AGH istotnie przewyższają QIM
+w~scenariuszu kompresji H.264/JPEG q75: odzysk payloadu utrzymuje się
+na poziomie około 99\%, podczas gdy dla QIM spada do 80\%.
+Różnica wynika z~miejsca osadzania informacji. Metody AGH wykorzystują
+kanał DC bloku, czyli współczynnik $(0,0)$, który jest mniej wrażliwy
+na kwantyzację JPEG niż środkowe współczynniki DCT używane przez QIM.
+Wariant AGH\_EXP osiąga zarazem najwyższą jakość wizualną
+(\num{48.1}~dB PSNR) przy zachowaniu bardzo dobrej odporności,
+co sugeruje, że transformata eksponencjalna koncentruje energię sygnału
+efektywniej niż NONEXP. Odwrotny profil ma AGH\_SPARSE: mimo wysokiej
+skuteczności odzysku uzyskuje najniższy PSNR (\num{41.1}~dB), ponieważ
+macierz rzadka rozkłada modyfikacje na większą liczbę współczynników.
+Atak przez przycięcie niszczy wszystkie metody w~tym samym stopniu
+(\num{0.000}). Przyczyną jest desynchronizacja siatki bloków $8 \times 8$
+po przycięciu i~ponownym przeskalowaniu obrazu, a więc strukturalna
+właściwość blokowych metod watermarkingu niezależna od użytej transformaty.
+W zastosowaniach wymagających odporności na kompresję najbardziej
+uzasadnionym wyborem jest AGH\_EXP. QIM pozostaje natomiast metodą prostszą
+obliczeniowo i~bardziej przewidywalną w~warunkach braku ataku.
+
+Powyższe wyniki prowadzą bezpośrednio do omówienia ograniczeń metody,
+zwłaszcza tych związanych z~desynchronizacją, doborem zbioru testowego
+i~zakresem generalizacji eksperymentów.
+
+% -------------------------------------------------------------------
 \section{Ograniczenia metody i~zagrożenia poprawności}
 \label{sec:threats_to_validity}
 
